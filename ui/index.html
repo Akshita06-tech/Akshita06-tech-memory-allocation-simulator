@@ -255,6 +255,86 @@
           </table>
         </div>
       </section>
+
+      <!-- Live charts -->
+      <section class="charts-section" aria-labelledby="charts-heading">
+        <div class="section-head">
+          <h2 id="charts-heading" class="section-title">Live memory charts</h2>
+          <p class="panel-sub">Updated after every upload, delete, merge, compaction, or failure in this session.</p>
+        </div>
+
+        <div class="charts-grid">
+          <article class="panel chart-card">
+            <div class="chart-head">
+              <h3>Fragmentation % over time</h3>
+              <span class="chart-meta">External fragmentation</span>
+            </div>
+            <div id="chart-frag" class="chart-body"></div>
+          </article>
+
+          <article class="panel chart-card">
+            <div class="chart-head">
+              <h3>Used vs free over time</h3>
+              <div class="chart-legend">
+                <span class="legend-item"><span class="swatch swatch-process"></span>Used</span>
+                <span class="legend-item"><span class="swatch swatch-free"></span>Free</span>
+              </div>
+            </div>
+            <div id="chart-used-free" class="chart-body"></div>
+          </article>
+
+          <article class="panel chart-card">
+            <div class="chart-head">
+              <h3>Current free-block sizes</h3>
+              <span class="chart-meta">Address order</span>
+            </div>
+            <div id="chart-free-blocks" class="chart-body"></div>
+          </article>
+        </div>
+      </section>
+
+      <!-- History table + CSV export -->
+      <section class="panel" aria-labelledby="history-heading">
+        <div class="panel-head">
+          <div>
+            <h2 id="history-heading">Action history</h2>
+            <p class="panel-sub">Every upload, delete, merge, compaction, and failure with free and largest-block values after the action.</p>
+          </div>
+          <div class="history-controls">
+            <div class="segmented" id="history-filter" role="group" aria-label="Filter history by action type">
+              <button type="button" class="seg-btn is-active" data-filter="all">All</button>
+              <button type="button" class="seg-btn" data-filter="upload">Upload</button>
+              <button type="button" class="seg-btn" data-filter="delete">Delete</button>
+              <button type="button" class="seg-btn" data-filter="merge">Merge</button>
+              <button type="button" class="seg-btn" data-filter="compaction">Compaction</button>
+              <button type="button" class="seg-btn" data-filter="failure">Failure</button>
+            </div>
+            <button type="button" id="export-csv-btn" class="btn btn-secondary btn-sm" disabled>Export CSV</button>
+          </div>
+        </div>
+
+        <div id="history-empty" class="empty-state">
+          <p>No actions recorded yet. Upload a file to begin logging history.</p>
+        </div>
+
+        <div id="history-table-wrap" class="table-wrap" hidden>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Time</th>
+                <th>Action</th>
+                <th>Process</th>
+                <th>Size</th>
+                <th>Address range</th>
+                <th>Strategy</th>
+                <th>Free / largest after</th>
+              </tr>
+            </thead>
+            <tbody id="history-tbody"></tbody>
+          </table>
+        </div>
+      </section>
     </section>
 
     <!-- Simulation tab (separated per plan; implemented in Phase C) -->

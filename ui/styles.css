@@ -878,8 +878,197 @@ body {
   border-radius: 6px;
 }
 
+/* Charts */
+.section-head {
+  margin-bottom: 10px;
+}
+
+.section-head .panel-sub {
+  margin-top: 0;
+}
+
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.chart-card {
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.chart-head h3 {
+  margin: 0;
+  font-size: 0.94rem;
+  font-weight: 700;
+}
+
+.chart-meta {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.chart-legend {
+  display: flex;
+  gap: 10px;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.chart-body {
+  flex: 1;
+  min-height: 195px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chart-empty {
+  width: 100%;
+  min-height: 185px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 16px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 0.86rem;
+}
+
+.chart-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.chart-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.chart-axis-line {
+  stroke: var(--border-strong);
+  stroke-width: 1.2;
+}
+
+.chart-axis-text {
+  fill: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+}
+
+.chart-value-text {
+  fill: var(--text);
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.chart-line-accent {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chart-area-accent {
+  fill: var(--accent);
+  fill-opacity: 0.14;
+}
+
+.chart-dot-accent {
+  fill: var(--accent);
+  stroke: var(--surface);
+  stroke-width: 1.5;
+}
+
+.chart-stack-used {
+  fill: var(--accent);
+  fill-opacity: 0.34;
+}
+
+.chart-stack-free {
+  fill: var(--free-stripe);
+  fill-opacity: 0.45;
+}
+
+.chart-bar-accent {
+  fill: var(--accent);
+  fill-opacity: 0.85;
+}
+
+.chart-bar-accent:hover {
+  fill-opacity: 1;
+}
+
+/* History table controls & action pills */
+.history-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.action-pill {
+  display: inline-block;
+  font-size: 0.76rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+}
+
+.action-pill.is-upload {
+  background: var(--ok-bg);
+  border-color: var(--ok-border);
+  color: var(--ok-text);
+}
+
+.action-pill.is-delete {
+  background: var(--surface-alt);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.action-pill.is-merge {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.action-pill.is-compaction {
+  background: var(--warn-bg);
+  border-color: var(--warn-border);
+  color: var(--warn-text);
+}
+
+.action-pill.is-failure {
+  background: var(--err-bg);
+  border-color: var(--err-border);
+  color: var(--err-text);
+}
+
 @media (max-width: 960px) {
   .workspace-grid {
+    grid-template-columns: 1fr;
+  }
+  .charts-grid {
     grid-template-columns: 1fr;
   }
   .stats-grid {

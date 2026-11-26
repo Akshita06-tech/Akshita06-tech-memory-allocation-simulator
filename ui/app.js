@@ -1,3 +1,9 @@
+import {
+  renderFragmentationChart,
+  renderUsedFreeChart,
+  renderFreeBlocksChart
+} from "/charts.js";
+
 const PROCESS_PALETTE = [
   "#0f766e",
   "#0369a1",
@@ -18,12 +24,31 @@ const STRATEGY_REASONS = {
   "Smart": "Smart uses engine_choose(): First Fit when >60% is free, Best Fit when tighter, or compacts first when total free is enough but scattered."
 };
 
+const STRATEGY_LABELS = {
+  first: "First Fit",
+  best: "Best Fit",
+  worst: "Worst Fit",
+  smart: "Smart"
+};
+
+const ACTION_LABELS = {
+  upload: "Upload",
+  delete: "Delete",
+  merge: "Merge",
+  compaction: "Compaction",
+  failure: "Failure"
+};
+
 const state = {
   sim: null,
   strategy: "first",
   stagedFile: null,
   precheck: null,
-  lastPlacedOwner: null
+  lastPlacedOwner: null,
+  history: [],
+  timeline: [],
+  historyFilter: "all",
+  stepCounter: 0
 };
 
 const el = (id) => document.getElementById(id);
@@ -240,11 +265,150 @@ function renderAllocationsTable() {
   }
 }
 
+function renderCharts() {
+  const hasActivity = state.history.length > 0;
+  const poolKb = state.sim ? state.sim.pool_kb : 0;
+  const blocks = state.sim ? state.sim.blocks : [];
+  renderFragmentationChart(el("chart-frag"), state.timeline, hasActivity);
+  renderUsedFreeChart(el("chart-used-free"), state.timeline, poolKb, hasActivity);
+  renderFreeBlocksChart(el("chart-free-blocks"), blocks, hasActivity);
+}
+
+function renderHistoryTable() {
+  const rows = state.historyFilter === "all"
+    ? state.history
+    : state.history.filter((r) => r.action === state.historyFilter);
+
+  const exportBtn = el("export-csv-btn");
+  exportBtn.disabled = rows.length === 0;
+
+  if (state.history.length === 0) {
+    el("history-empty").hidden = false;
+    el("history-empty").innerHTML = "<p>No actions recorded yet. Upload a file to begin logging history.</p>";
+    el("history-table-wrap").hidden = true;
+    return;
+  }
+
+  if (rows.length === 0) {
+    el("history-empty").hidden = false;
+    el("history-empty").innerHTML = `<p>No ${escapeHtml(ACTION_LABELS[state.historyFilter] || state.historyFilter)} entries recorded yet.</p>`;
+    el("history-table-wrap").hidden = true;
+    return;
+  }
+
+  el("history-empty").hidden = true;
+  el("history-table-wrap").hidden = false;
+
+  const tbody = el("history-tbody");
+  tbody.innerHTML = "";
+  for (const row of [...rows].reverse()) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>#${row.step}</td>
+      <td>${escapeHtml(row.timestamp)}</td>
+      <td><span class="action-pill is-${escapeHtml(row.action)}">${escapeHtml(ACTION_LABELS[row.action] || row.action)}</span></td>
+      <td>${escapeHtml(row.process)}</td>
+      <td>${row.sizeKb !== null ? `${fmtMb(row.sizeKb)} (${fmtKb(row.sizeKb)})` : "—"}</td>
+      <td>${escapeHtml(row.rangeText)}</td>
+      <td>${escapeHtml(row.strategy)}</td>
+      <td>${fmtKb(row.freeAfterKb)} free · ${fmtKb(row.largestAfterKb)} largest</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
 function renderAll() {
   syncHeaderControls();
   renderMemoryMap();
   renderStats();
   renderAllocationsTable();
+  renderCharts();
+  renderHistoryTable();
+}
+
+function ensureBaselineTimeline(beforeStats) {
+  if (state.timeline.length === 0 && beforeStats) {
+    state.timeline.push({
+      step: 0,
+      action: "Initial",
+      used_kb: beforeStats.used_kb,
+      total_free_kb: beforeStats.total_free_kb,
+      fragmentation_pct: beforeStats.fragmentation_pct
+    });
+  }
+}
+
+function pushTimelinePoint(actionLabel, statsObj) {
+  if (!statsObj) return;
+  state.stepCounter += 1;
+  state.timeline.push({
+    step: state.stepCounter,
+    action: actionLabel,
+    used_kb: statsObj.used_kb,
+    total_free_kb: statsObj.total_free_kb,
+    fragmentation_pct: statsObj.fragmentation_pct
+  });
+}
+
+function pushHistoryRow(entry) {
+  const now = new Date();
+  state.history.push({
+    step: state.history.length + 1,
+    timestamp: now.toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+    isoTime: now.toISOString(),
+    ...entry
+  });
+}
+
+function exportHistoryCsv() {
+  const rows = state.historyFilter === "all"
+    ? state.history
+    : state.history.filter((r) => r.action === state.historyFilter);
+  if (rows.length === 0) return;
+
+  const escapeCsv = (val) => {
+    const str = String(val ?? "");
+    return /[",\r\n]/.test(str) ? `"${str.replaceAll('"', '""')}"` : str;
+  };
+
+  const headers = [
+    "step",
+    "timestamp",
+    "action",
+    "process",
+    "size_kb",
+    "address_range",
+    "strategy",
+    "free_after_kb",
+    "largest_free_after_kb",
+    "fragmentation_after_pct"
+  ];
+
+  const lines = [headers.join(",")];
+  for (const r of rows) {
+    lines.push([
+      r.step,
+      r.isoTime,
+      ACTION_LABELS[r.action] || r.action,
+      r.process,
+      r.sizeKb ?? "",
+      r.rangeText,
+      r.strategy,
+      r.freeAfterKb,
+      r.largestAfterKb,
+      r.fragAfterPct.toFixed(4)
+    ].map(escapeCsv).join(","));
+  }
+
+  const blob = new Blob([lines.join("\r\n") + "\r\n"], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "device_memory_history.csv";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 function clearOutcomeCards() {
@@ -458,6 +622,7 @@ async function runPrecheck(file) {
 
 async function handleConfirmAlloc() {
   if (!state.stagedFile) return;
+  const prevStats = state.sim ? state.sim.stats : null;
   const file = state.stagedFile;
   const res = await apiJson("/api/alloc", {
     method: "POST",
@@ -473,11 +638,51 @@ async function handleConfirmAlloc() {
   }
 
   if (res.ok) {
-    state.lastPlacedOwner = res.receipt.owner;
-    showPlacementReceipt(res.receipt);
+    ensureBaselineTimeline(prevStats);
+    const r = res.receipt;
+    if (r.smart_compacted) {
+      pushHistoryRow({
+        action: "compaction",
+        process: "Smart auto-compact",
+        sizeKb: r.smart_units_moved_kb,
+        rangeText: "Consolidated before placement",
+        strategy: "Smart",
+        freeAfterKb: r.pre_total_free_kb,
+        largestAfterKb: r.pre_total_free_kb,
+        fragAfterPct: 0
+      });
+    }
+    pushHistoryRow({
+      action: "upload",
+      process: `#${r.pid} ${r.owner}`,
+      sizeKb: r.units_kb,
+      rangeText: `${fmtRangeMb(r.start_kb, r.end_kb)} ([${r.start_kb}, ${r.end_kb}) KB)`,
+      strategy: r.strategy,
+      freeAfterKb: res.stats.total_free_kb,
+      largestAfterKb: res.stats.largest_free_kb,
+      fragAfterPct: res.stats.fragmentation_pct
+    });
+    pushTimelinePoint("Upload", res.stats);
+
+    state.lastPlacedOwner = r.owner;
+    showPlacementReceipt(r);
     renderAll();
     clearStagedFile();
   } else if (res.failure_kind) {
+    ensureBaselineTimeline(prevStats);
+    const kindLabel = res.failure_kind === 1 ? "Fragmentation failure" : "Out-of-memory failure";
+    pushHistoryRow({
+      action: "failure",
+      process: `${file.name} (${kindLabel})`,
+      sizeKb: res.requested_kb,
+      rangeText: "Not placed",
+      strategy: STRATEGY_LABELS[state.strategy] || state.strategy,
+      freeAfterKb: res.stats.total_free_kb,
+      largestAfterKb: res.stats.largest_free_kb,
+      fragAfterPct: res.stats.fragmentation_pct
+    });
+    pushTimelinePoint("Failure", res.stats);
+
     state.lastPlacedOwner = null;
     showFailureCard(res);
     renderAll();
@@ -489,8 +694,22 @@ async function handleConfirmAlloc() {
 
 async function handleCompactAndRetry() {
   if (!state.stagedFile) return;
+  const prevStats = state.sim ? state.sim.stats : null;
   const compactRes = await apiJson("/api/compact", { method: "POST", body: "{}" });
   if (compactRes.ok) {
+    ensureBaselineTimeline(prevStats);
+    const cd = compactRes.compact_diff;
+    pushHistoryRow({
+      action: "compaction",
+      process: "All active blocks",
+      sizeKb: cd.units_moved_kb,
+      rangeText: "Consolidated to 1 free block",
+      strategy: "Compact & retry",
+      freeAfterKb: cd.after_stats.total_free_kb,
+      largestAfterKb: cd.after_stats.largest_free_kb,
+      fragAfterPct: cd.after_stats.fragmentation_pct
+    });
+    pushTimelinePoint("Compaction", cd.after_stats);
     state.sim = compactRes;
     renderAll();
   }
@@ -498,6 +717,7 @@ async function handleCompactAndRetry() {
 }
 
 async function handleDelete(owner) {
+  const prevStats = state.sim ? state.sim.stats : null;
   const res = await apiJson("/api/free", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -507,9 +727,40 @@ async function handleDelete(owner) {
     alert(res.error || "Delete failed.");
     return;
   }
+  ensureBaselineTimeline(prevStats);
+  const diff = res.delete_diff;
+  pushHistoryRow({
+    action: "delete",
+    process: diff.owner,
+    sizeKb: diff.freed_kb,
+    rangeText: `${fmtRangeMb(diff.freed_start_kb, diff.freed_end_kb)} ([${diff.freed_start_kb}, ${diff.freed_end_kb}) KB)`,
+    strategy: "—",
+    freeAfterKb: diff.after_stats.total_free_kb,
+    largestAfterKb: diff.after_stats.largest_free_kb,
+    fragAfterPct: diff.after_stats.fragmentation_pct
+  });
+  if (diff.merged_left || diff.merged_right) {
+    const mergeWho = diff.merged_left && diff.merged_right
+      ? "Left + right neighbours"
+      : diff.merged_left
+        ? "Left neighbour"
+        : "Right neighbour";
+    pushHistoryRow({
+      action: "merge",
+      process: `${diff.owner} (${mergeWho})`,
+      sizeKb: diff.coalesced_size_kb,
+      rangeText: `${fmtRangeMb(diff.coalesced_start_kb, diff.coalesced_end_kb)} ([${diff.coalesced_start_kb}, ${diff.coalesced_end_kb}) KB)`,
+      strategy: "Coalesce",
+      freeAfterKb: diff.after_stats.total_free_kb,
+      largestAfterKb: diff.after_stats.largest_free_kb,
+      fragAfterPct: diff.after_stats.fragmentation_pct
+    });
+  }
+  pushTimelinePoint("Delete", diff.after_stats);
+
   state.lastPlacedOwner = null;
   state.sim = res;
-  showDeleteDiff(res.delete_diff);
+  showDeleteDiff(diff);
   renderAll();
   if (state.stagedFile) {
     await runPrecheck(state.stagedFile);
@@ -517,11 +768,26 @@ async function handleDelete(owner) {
 }
 
 async function handleCompact() {
+  const prevStats = state.sim ? state.sim.stats : null;
   const res = await apiJson("/api/compact", { method: "POST", body: "{}" });
   if (!res.ok) return;
+  ensureBaselineTimeline(prevStats);
+  const cd = res.compact_diff;
+  pushHistoryRow({
+    action: "compaction",
+    process: "All active blocks",
+    sizeKb: cd.units_moved_kb,
+    rangeText: "Consolidated to 1 free block",
+    strategy: "Manual compact",
+    freeAfterKb: cd.after_stats.total_free_kb,
+    largestAfterKb: cd.after_stats.largest_free_kb,
+    fragAfterPct: cd.after_stats.fragmentation_pct
+  });
+  pushTimelinePoint("Compaction", cd.after_stats);
+
   state.lastPlacedOwner = null;
   state.sim = res;
-  showCompactDiff(res.compact_diff);
+  showCompactDiff(cd);
   renderAll();
   if (state.stagedFile) {
     await runPrecheck(state.stagedFile);
@@ -536,6 +802,9 @@ async function handleInitPool(poolKb) {
   });
   if (!res.ok) return;
   state.lastPlacedOwner = null;
+  state.history = [];
+  state.timeline = [];
+  state.stepCounter = 0;
   state.sim = res;
   el("outcome-empty").hidden = false;
   el("receipt-card").hidden = true;
@@ -612,6 +881,17 @@ function setupEvents() {
 
   el("clear-file-btn").addEventListener("click", clearStagedFile);
   el("confirm-alloc-btn").addEventListener("click", handleConfirmAlloc);
+  el("export-csv-btn").addEventListener("click", exportHistoryCsv);
+
+  document.querySelectorAll("#history-filter .seg-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.historyFilter = btn.dataset.filter;
+      document.querySelectorAll("#history-filter .seg-btn").forEach((b) => {
+        b.classList.toggle("is-active", b === btn);
+      });
+      renderHistoryTable();
+    });
+  });
 
   document.querySelectorAll(".mode-tab").forEach((tab) => {
     tab.addEventListener("click", () => {
