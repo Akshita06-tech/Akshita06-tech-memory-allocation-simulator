@@ -31,6 +31,21 @@ static int g_waiters = 0;
 static ActiveProc g_procs[MAX_INTERACTIVE_PROCS];
 static int g_proc_count = 0;
 
+/* Separate state for the Phase C tick-by-tick Simulation tab. */
+static Memory *g_sim_mem = NULL;
+static Proc *g_sim_procs = NULL;
+static int g_sim_n = 0;
+static Strategy g_sim_strategy = FIRST_FIT;
+static ProfileMode g_sim_mode = FILE_PROFILES;
+static Pattern g_sim_pattern = BALANCED_PATTERN;
+static unsigned g_sim_seed = 42;
+static ProcQueue g_sim_q;
+static int g_sim_tick = 0;
+static int g_sim_done = 0;
+static Metrics g_sim_met;
+static double g_sim_frag_sum = 0.0;
+static int g_sim_frag_samples = 0;
+
 static int reserved_units_for(int pool_kb) {
     int r = (int)((pool_kb * SYSTEM_RESERVE_PCT) / 100.0 + 0.5);
     if (r < 1) r = 1;
@@ -532,6 +547,411 @@ static void handle_free(const char *owner) {
     free(after_blocks);
 }
 
+static int parse_mode(const char *arg, ProfileMode *out) {
+    if (!arg || !out) return 0;
+    if (strcmp(arg, "file") == 0) { *out = FILE_PROFILES; return 1; }
+    if (strcmp(arg, "program") == 0) { *out = PROGRAM_PROFILES; return 1; }
+    return 0;
+}
+
+static int parse_pattern(const char *arg, Pattern *out) {
+    if (!arg || !out) return 0;
+    if (strcmp(arg, "light") == 0) { *out = LIGHT_PATTERN; return 1; }
+    if (strcmp(arg, "balanced") == 0) { *out = BALANCED_PATTERN; return 1; }
+    if (strcmp(arg, "heavy") == 0) { *out = HEAVY_PATTERN; return 1; }
+    return 0;
+}
+
+static void sim_free_state(void) {
+    if (g_sim_mem) { mem_destroy(g_sim_mem); g_sim_mem = NULL; }
+    free(g_sim_procs);
+    g_sim_procs = NULL;
+    g_sim_n = 0;
+    queue_init(&g_sim_q);
+    g_sim_tick = 0;
+    g_sim_done = 0;
+    memset(&g_sim_met, 0, sizeof(g_sim_met));
+    g_sim_frag_sum = 0.0;
+    g_sim_frag_samples = 0;
+}
+
+static void sim_attempt_one(int idx, int tick) {
+    Proc *x = &g_sim_procs[idx];
+    if (x->units > g_sim_mem->total_units) {
+        x->state = P_REJECTED;
+        if (!x->first_try_failure) {
+            x->first_try_failure = 2;
+            g_sim_met.oom_failures++;
+        }
+        return;
+    }
+    int compact_first = 0;
+    Strategy use = (g_sim_strategy == SMART_FIT)
+        ? engine_choose(g_sim_mem, x->units, &compact_first)
+        : g_sim_strategy;
+    if (compact_first) {
+        mem_compact(g_sim_mem);
+        refresh_process_addresses(g_sim_procs, g_sim_n, g_sim_mem);
+        g_sim_met.compactions = g_sim_mem->compactions;
+        g_sim_met.units_moved = g_sim_mem->units_moved;
+    }
+    int examined = 0;
+    Block *b = find_block(g_sim_mem, x->units, use, &examined);
+    g_sim_met.total_searches += examined;
+    g_sim_met.allocation_attempts++;
+    if (b) {
+        b = mem_alloc_selected(g_sim_mem, x->name, x->units, b);
+        if (b) {
+            x->start_addr = b->start;
+            x->end_addr = b->start + b->size;
+            x->start_tick = tick;
+            x->finish_tick = tick + x->duration;
+            x->state = P_RUNNING;
+            if (x->wait_start_tick >= 0) x->wait_ticks = tick - x->wait_start_tick;
+            if (!x->first_try_failure) g_sim_met.first_try_success++;
+            return;
+        }
+    }
+    if (!x->first_try_failure) {
+        x->first_try_failure = failure_kind(g_sim_mem, x->units);
+        if (x->first_try_failure == 1) g_sim_met.fragmentation_failures++;
+        else g_sim_met.oom_failures++;
+    }
+    x->state = P_WAITING;
+    if (x->wait_start_tick < 0) x->wait_start_tick = tick;
+    if (!x->queued && queue_push(&g_sim_q, idx)) x->queued = 1;
+}
+
+static void sim_refresh_live_metrics(void) {
+    g_sim_met.process_count = g_sim_n;
+    g_sim_met.accepted = 0;
+    g_sim_met.waiting_processes = 0;
+    g_sim_met.total_wait_ticks = 0;
+    g_sim_met.waiters = 0;
+    g_sim_met.compactions = g_sim_mem ? g_sim_mem->compactions : 0;
+    g_sim_met.units_moved = g_sim_mem ? g_sim_mem->units_moved : 0;
+    int max_finish = g_sim_tick > 0 ? g_sim_tick - 1 : 0;
+
+    for (int i = 0; i < g_sim_n; i++) {
+        const Proc *p = &g_sim_procs[i];
+        if (p->state != P_REJECTED && p->state != P_NEW) {
+            g_sim_met.accepted++;
+        } else if (p->state == P_NEW) {
+            /* Not yet arrived; exclude from accepted-so-far denominator or count once arrived. */
+        }
+        int cur_wait = p->wait_ticks;
+        if (p->state == P_WAITING && p->wait_start_tick >= 0 && g_sim_tick > p->wait_start_tick) {
+            cur_wait = g_sim_tick - p->wait_start_tick;
+        }
+        if (cur_wait > 0) {
+            g_sim_met.waiting_processes++;
+            g_sim_met.total_wait_ticks += cur_wait;
+            g_sim_met.waiters++;
+        }
+        if (p->finish_tick > max_finish) max_finish = p->finish_tick;
+    }
+
+    g_sim_met.makespan = g_sim_done ? max_finish : g_sim_tick;
+    g_sim_met.avg_wait = g_sim_met.waiters ? (double)g_sim_met.total_wait_ticks / g_sim_met.waiters : 0.0;
+    g_sim_met.success_rate = g_sim_met.accepted ? (double)g_sim_met.first_try_success / g_sim_met.accepted * 100.0 : 0.0;
+    g_sim_met.avg_search_length = g_sim_met.allocation_attempts ? (double)g_sim_met.total_searches / g_sim_met.allocation_attempts : 0.0;
+    g_sim_met.avg_fragmentation = g_sim_frag_samples ? g_sim_frag_sum / g_sim_frag_samples : 0.0;
+    if (g_sim_mem) {
+        Stats st = mem_stats(g_sim_mem);
+        g_sim_met.final_free_memory = st.total_free;
+        g_sim_met.final_used_memory = st.used_memory;
+        g_sim_met.final_largest_free = st.largest_free;
+        g_sim_met.final_free_fragments = st.free_fragments;
+    }
+}
+
+static Stats sim_run_one_tick(void) {
+    int tick = g_sim_tick;
+    for (int i = 0; i < g_sim_n; i++) {
+        if (g_sim_procs[i].state == P_RUNNING && g_sim_procs[i].finish_tick == tick) {
+            mem_free(g_sim_mem, g_sim_procs[i].name);
+            g_sim_procs[i].state = P_COMPLETED;
+        }
+    }
+
+    int qcount = queue_size(&g_sim_q);
+    for (int k = 0; k < qcount; k++) {
+        int idx = -1;
+        if (!queue_pop(&g_sim_q, &idx)) continue;
+        if (idx < 0 || idx >= g_sim_n) continue;
+        g_sim_procs[idx].queued = 0;
+        if (g_sim_procs[idx].state == P_WAITING) {
+            sim_attempt_one(idx, tick);
+        }
+    }
+
+    for (int i = 0; i < g_sim_n; i++) {
+        if (g_sim_procs[i].state == P_NEW && g_sim_procs[i].arrive_tick <= tick) {
+            g_sim_procs[i].state = P_READY;
+            sim_attempt_one(i, tick);
+        }
+    }
+
+    Stats st = mem_stats(g_sim_mem);
+    g_sim_frag_sum += st.external_fragmentation;
+    g_sim_frag_samples++;
+    g_sim_tick++;
+
+    int remaining = 0;
+    for (int i = 0; i < g_sim_n; i++) {
+        if (g_sim_procs[i].state != P_COMPLETED && g_sim_procs[i].state != P_REJECTED) {
+            remaining++;
+        }
+    }
+    if (remaining == 0 || g_sim_tick >= 100000) {
+        for (int i = 0; i < g_sim_n; i++) {
+            if (g_sim_procs[i].state == P_RUNNING) {
+                mem_free(g_sim_mem, g_sim_procs[i].name);
+                g_sim_procs[i].state = P_COMPLETED;
+            }
+        }
+        g_sim_done = 1;
+    }
+    sim_refresh_live_metrics();
+    return st;
+}
+
+static void print_sim_blocks(void) {
+    putchar('[');
+    int first = 1;
+    for (const Block *b = g_sim_mem ? g_sim_mem->head : NULL; b; b = b->next) {
+        if (!first) putchar(',');
+        first = 0;
+        int pid = -1;
+        if (!b->is_free) {
+            for (int i = 0; i < g_sim_n; i++) {
+                if (strcmp(g_sim_procs[i].name, b->owner) == 0) {
+                    pid = g_sim_procs[i].id;
+                    break;
+                }
+            }
+        }
+        printf("{\"start_kb\":%d,\"end_kb\":%d,\"size_kb\":%d,\"is_free\":%s,\"owner\":",
+               b->start, b->start + b->size, b->size, b->is_free ? "true" : "false");
+        json_escape_print(b->is_free ? "" : b->owner);
+        printf(",\"pid\":%d}", pid);
+    }
+    putchar(']');
+}
+
+static void print_sim_state_fields(void) {
+    Stats st = mem_stats(g_sim_mem);
+    int inv = mem_check_invariants(g_sim_mem);
+    printf("\"tick\":%d,\"done\":%s,\"pool_kb\":%d,\"process_count\":%d,"
+           "\"strategy\":",
+           g_sim_tick, g_sim_done ? "true" : "false", g_sim_mem->total_units, g_sim_n);
+    json_escape_print(strategy_name(g_sim_strategy));
+    printf(",\"invariant_ok\":%s,"
+           "\"stats\":{\"total_free_kb\":%d,\"used_kb\":%d,\"largest_free_kb\":%d,"
+           "\"free_fragments\":%d,\"fragmentation_pct\":%.4f},"
+           "\"metrics\":{\"accepted\":%d,\"first_try_success\":%d,\"success_rate\":%.2f,"
+           "\"frag_failures\":%d,\"oom_failures\":%d,\"waiting_processes\":%d,"
+           "\"avg_wait\":%.2f,\"makespan\":%d,\"avg_fragmentation\":%.2f,"
+           "\"avg_search_length\":%.2f,\"compactions\":%d,\"units_moved\":%ld},",
+           inv == 0 ? "true" : "false",
+           st.total_free, st.used_memory, st.largest_free,
+           st.free_fragments, st.external_fragmentation,
+           g_sim_met.accepted, g_sim_met.first_try_success, g_sim_met.success_rate,
+           g_sim_met.fragmentation_failures, g_sim_met.oom_failures, g_sim_met.waiting_processes,
+           g_sim_met.avg_wait, g_sim_met.makespan, g_sim_met.avg_fragmentation,
+           g_sim_met.avg_search_length, g_sim_met.compactions, g_sim_met.units_moved);
+
+    fputs("\"blocks\":", stdout);
+    print_sim_blocks();
+
+    fputs(",\"queue\":[", stdout);
+    for (int k = 0; k < g_sim_q.count; k++) {
+        int idx = g_sim_q.items[(g_sim_q.front + k) % MAX_PROCS];
+        const Proc *p = &g_sim_procs[idx];
+        if (k > 0) putchar(',');
+        int cur_wait = (p->wait_start_tick >= 0 && g_sim_tick > p->wait_start_tick)
+            ? (g_sim_tick - p->wait_start_tick) : p->wait_ticks;
+        printf("{\"id\":%d,\"name\":", p->id);
+        json_escape_print(p->name);
+        printf(",\"units_kb\":%d,\"wait_ticks\":%d,\"failure_kind\":%d}",
+               p->units, cur_wait, p->first_try_failure);
+    }
+
+    fputs("],\"processes\":[", stdout);
+    for (int i = 0; i < g_sim_n; i++) {
+        const Proc *p = &g_sim_procs[i];
+        if (i > 0) putchar(',');
+        int cur_wait = p->wait_ticks;
+        if (p->state == P_WAITING && p->wait_start_tick >= 0 && g_sim_tick > p->wait_start_tick) {
+            cur_wait = g_sim_tick - p->wait_start_tick;
+        }
+        printf("{\"id\":%d,\"name\":", p->id);
+        json_escape_print(p->name);
+        fputs(",\"type\":", stdout);
+        json_escape_print(p->type);
+        printf(",\"units_kb\":%d,\"duration\":%d,\"arrive_tick\":%d,"
+               "\"start_tick\":%d,\"finish_tick\":%d,\"start_addr\":%d,\"end_addr\":%d,"
+               "\"state\":",
+               p->units, p->duration, p->arrive_tick,
+               p->start_tick, p->finish_tick, p->start_addr, p->end_addr);
+        json_escape_print(state_name(p->state));
+        printf(",\"wait_ticks\":%d,\"first_try_failure\":%d}", cur_wait, p->first_try_failure);
+    }
+    putchar(']');
+}
+
+static void handle_sim_init(char *fields[], int nf) {
+    if (nf < 7) {
+        fputs("{\"ok\":false,\"error\":\"SIM_INIT requires mode, pattern, pool_kb, seed, n, strategy.\"}\n", stdout);
+        return;
+    }
+    ProfileMode mode = FILE_PROFILES;
+    Pattern pattern = BALANCED_PATTERN;
+    Strategy strat = FIRST_FIT;
+    if (!parse_mode(fields[1], &mode) || !parse_pattern(fields[2], &pattern) || !parse_strategy(fields[6], &strat)) {
+        fputs("{\"ok\":false,\"error\":\"Invalid simulation mode, pattern, or strategy.\"}\n", stdout);
+        return;
+    }
+    int pool_kb = atoi(fields[3]);
+    unsigned seed = (unsigned)strtoul(fields[4], NULL, 10);
+    int n = atoi(fields[5]);
+    if (pool_kb < 64 || pool_kb > 262144 || n < 1 || n > MAX_PROCS) {
+        fputs("{\"ok\":false,\"error\":\"Pool size or process count out of range.\"}\n", stdout);
+        return;
+    }
+
+    sim_free_state();
+    g_sim_mem = mem_create(pool_kb, KB);
+    g_sim_procs = calloc((size_t)n, sizeof(Proc));
+    if (!g_sim_mem || !g_sim_procs) {
+        sim_free_state();
+        fputs("{\"ok\":false,\"error\":\"Failed to allocate simulation memory.\"}\n", stdout);
+        return;
+    }
+
+    g_sim_n = n;
+    g_sim_mode = mode;
+    g_sim_pattern = pattern;
+    g_sim_seed = seed;
+    g_sim_strategy = strat;
+    generate_processes(g_sim_procs, n, seed, (int)pattern, mode);
+    sim_refresh_live_metrics();
+
+    fputs("{\"ok\":true,", stdout);
+    print_sim_state_fields();
+    fputs("}\n", stdout);
+}
+
+static void handle_sim_step(int steps) {
+    if (!g_sim_mem || !g_sim_procs || g_sim_n <= 0) {
+        fputs("{\"ok\":false,\"error\":\"Simulation is not initialized.\"}\n", stdout);
+        return;
+    }
+    if (steps < 1) steps = 1;
+    if (steps > 200) steps = 200;
+
+    fputs("{\"ok\":true,\"tick_snapshots\":[", stdout);
+    int emitted = 0;
+    for (int s = 0; s < steps && !g_sim_done; s++) {
+        int tick_executed = g_sim_tick;
+        Stats st = sim_run_one_tick();
+        if (emitted > 0) putchar(',');
+        emitted++;
+        printf("{\"tick\":%d,\"used_kb\":%d,\"total_free_kb\":%d,"
+               "\"free_fragments\":%d,\"largest_free_kb\":%d,\"fragmentation_pct\":%.4f}",
+               tick_executed, st.used_memory, st.total_free,
+               st.free_fragments, st.largest_free, st.external_fragmentation);
+    }
+    fputs("],", stdout);
+    print_sim_state_fields();
+    fputs("}\n", stdout);
+}
+
+static void handle_sim_compare(char *fields[], int nf) {
+    if (nf < 6) {
+        fputs("{\"ok\":false,\"error\":\"SIM_COMPARE requires mode, pattern, pool_kb, seed, n.\"}\n", stdout);
+        return;
+    }
+    ProfileMode mode = FILE_PROFILES;
+    Pattern pattern = BALANCED_PATTERN;
+    if (!parse_mode(fields[1], &mode) || !parse_pattern(fields[2], &pattern)) {
+        fputs("{\"ok\":false,\"error\":\"Invalid simulation mode or pattern.\"}\n", stdout);
+        return;
+    }
+    int pool_kb = atoi(fields[3]);
+    unsigned seed = (unsigned)strtoul(fields[4], NULL, 10);
+    int n = atoi(fields[5]);
+    if (pool_kb < 64 || pool_kb > 262144 || n < 1 || n > MAX_PROCS) {
+        fputs("{\"ok\":false,\"error\":\"Pool size or process count out of range.\"}\n", stdout);
+        return;
+    }
+
+    Proc *work = calloc((size_t)n, sizeof(Proc));
+    if (!work) {
+        fputs("{\"ok\":false,\"error\":\"Out of memory creating workload.\"}\n", stdout);
+        return;
+    }
+    generate_processes(work, n, seed, (int)pattern, mode);
+
+    Strategy ss[4] = { FIRST_FIT, BEST_FIT, WORST_FIT, SMART_FIT };
+    Metrics results[4];
+    memset(results, 0, sizeof(results));
+
+    for (int k = 0; k < 4; k++) {
+        Proc *copy = malloc((size_t)n * sizeof(Proc));
+        Memory *m = mem_create(pool_kb, KB);
+        if (!copy || !m) {
+            free(copy);
+            if (m) mem_destroy(m);
+            free(work);
+            fputs("{\"ok\":false,\"error\":\"Out of memory running strategy comparison.\"}\n", stdout);
+            return;
+        }
+        memcpy(copy, work, (size_t)n * sizeof(Proc));
+        sim_run(copy, n, m, ss[k], &results[k]);
+        mem_destroy(m);
+        free(copy);
+    }
+    free(work);
+
+    int ranks[4] = {0, 0, 0, 0};
+    calculate_rank_sums(results, ranks);
+    char why[256] = "";
+    Strategy winner = recommend(results, 4, why, sizeof(why));
+
+    int best_rank = ranks[0], ties = 0;
+    for (int k = 1; k < 4; k++) if (ranks[k] < best_rank) best_rank = ranks[k];
+    for (int k = 0; k < 4; k++) if (ranks[k] == best_rank) ties++;
+
+    fputs("{\"ok\":true,\"results\":[", stdout);
+    for (int k = 0; k < 4; k++) {
+        if (k > 0) putchar(',');
+        const Metrics *mt = &results[k];
+        printf("{\"strategy\":");
+        json_escape_print(strategy_name(ss[k]));
+        printf(",\"strategy_key\":");
+        json_escape_print(strategy_key(ss[k]));
+        printf(",\"accepted\":%d,\"first_try_success\":%d,\"success_rate\":%.4f,"
+               "\"frag_failures\":%d,\"oom_failures\":%d,\"waiting_processes\":%d,"
+               "\"avg_wait\":%.4f,\"makespan\":%d,\"avg_fragmentation\":%.4f,"
+               "\"avg_search_length\":%.4f,\"compactions\":%d,\"units_moved\":%ld,"
+               "\"rank_sum\":%d}",
+               mt->accepted, mt->first_try_success, mt->success_rate,
+               mt->fragmentation_failures, mt->oom_failures, mt->waiting_processes,
+               mt->avg_wait, mt->makespan, mt->avg_fragmentation,
+               mt->avg_search_length, mt->compactions, mt->units_moved,
+               ranks[k]);
+    }
+    printf("],\"winner\":");
+    json_escape_print(strategy_name(winner));
+    printf(",\"winner_key\":");
+    json_escape_print(strategy_key(winner));
+    printf(",\"is_tie\":%s,\"tie_count\":%d,\"recommendation_why\":",
+           ties > 1 ? "true" : "false", ties);
+    json_escape_print(why);
+    fputs("}\n", stdout);
+}
+
 static void handle_compact(void) {
     Stats before_stats = mem_stats(g_mem);
     BlockSnap *before_blocks = NULL;
@@ -615,6 +1035,13 @@ int main(void) {
             handle_free(fields[1]);
         } else if (strcmp(cmd, "COMPACT") == 0) {
             handle_compact();
+        } else if (strcmp(cmd, "SIM_INIT") == 0) {
+            handle_sim_init(fields, nf);
+        } else if (strcmp(cmd, "SIM_STEP") == 0) {
+            int steps = (nf >= 2) ? atoi(fields[1]) : 1;
+            handle_sim_step(steps);
+        } else if (strcmp(cmd, "SIM_COMPARE") == 0) {
+            handle_sim_compare(fields, nf);
         } else if (strcmp(cmd, "QUIT") == 0) {
             fputs("{\"ok\":true,\"bye\":true}\n", stdout);
             fflush(stdout);
@@ -625,6 +1052,7 @@ int main(void) {
         fflush(stdout);
     }
 
+    sim_free_state();
     if (g_mem) mem_destroy(g_mem);
     return 0;
 }

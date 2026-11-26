@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import shutil
@@ -239,6 +240,58 @@ class SimulatorHandler(BaseHTTPRequestHandler):
                 self.send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": str(exc)})
             return
 
+        if parsed.path == "/api/csv/timing":
+            csv_path = ROOT_DIR / "timing_results.csv"
+            if not csv_path.exists():
+                self.send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "timing_results.csv not found."})
+                return
+            with csv_path.open("r", newline="", encoding="utf-8") as fh:
+                rows = [
+                    {
+                        "processes": int(r["processes"]),
+                        "seed": int(r["seed"]),
+                        "strategy": r["strategy"],
+                        "repetitions": int(r["repetitions"]),
+                        "average_elapsed_seconds": float(r["average_elapsed_seconds"]),
+                    }
+                    for r in csv.DictReader(fh)
+                ]
+            self.send_json(HTTPStatus.OK, {"ok": True, "rows": rows})
+            return
+
+        if parsed.path == "/api/csv/experiments":
+            csv_path = ROOT_DIR / "experiment_results.csv"
+            if not csv_path.exists():
+                self.send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "experiment_results.csv not found."})
+                return
+            with csv_path.open("r", newline="", encoding="utf-8") as fh:
+                rows = [
+                    {
+                        "mode": r["mode"],
+                        "pattern": r["pattern"],
+                        "pool_kb": int(r["pool_kb"]),
+                        "processes": int(r["processes"]),
+                        "seed": int(r["seed"]),
+                        "strategy": r["strategy"],
+                        "accepted": int(r["accepted"]),
+                        "first_try_success": int(r["first_try_success"]),
+                        "fragmentation_failures": int(r["fragmentation_failures"]),
+                        "oom_failures": int(r["oom_failures"]),
+                        "waiting_processes": int(r["waiting_processes"]),
+                        "success_rate_pct": float(r["success_rate_pct"]),
+                        "avg_wait_ticks": float(r["avg_wait_ticks"]),
+                        "makespan_ticks": int(r["makespan_ticks"]),
+                        "avg_fragmentation_pct": float(r["avg_fragmentation_pct"]),
+                        "avg_search_length": float(r["avg_search_length"]),
+                        "compactions": int(r["compactions"]),
+                        "units_moved": int(r["units_moved"]),
+                        "rank_sum": int(r["rank_sum"]),
+                    }
+                    for r in csv.DictReader(fh)
+                ]
+            self.send_json(HTTPStatus.OK, {"ok": True, "rows": rows})
+            return
+
         self.send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "Endpoint not found."})
 
     def do_POST(self) -> None:  # noqa: N802
@@ -280,6 +333,31 @@ class SimulatorHandler(BaseHTTPRequestHandler):
                 self.send_json(HTTPStatus.OK, res)
             elif parsed.path == "/api/compact":
                 res = BRIDGE.command("COMPACT")
+                self.send_json(HTTPStatus.OK, res)
+            elif parsed.path == "/api/sim/init":
+                res = BRIDGE.command(
+                    "SIM_INIT",
+                    str(body.get("mode", "file")),
+                    str(body.get("pattern", "balanced")),
+                    int(body.get("pool_kb", 4096)),
+                    int(body.get("seed", 42)),
+                    int(body.get("count", 40)),
+                    str(body.get("strategy", "first")),
+                )
+                self.send_json(HTTPStatus.OK, res)
+            elif parsed.path == "/api/sim/step":
+                steps = int(body.get("steps", 1))
+                res = BRIDGE.command("SIM_STEP", steps)
+                self.send_json(HTTPStatus.OK, res)
+            elif parsed.path == "/api/sim/compare":
+                res = BRIDGE.command(
+                    "SIM_COMPARE",
+                    str(body.get("mode", "file")),
+                    str(body.get("pattern", "balanced")),
+                    int(body.get("pool_kb", 4096)),
+                    int(body.get("seed", 42)),
+                    int(body.get("count", 40)),
+                )
                 self.send_json(HTTPStatus.OK, res)
             else:
                 self.send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "Endpoint not found."})
