@@ -31,15 +31,18 @@ function renderEmpty(container, message) {
   container.innerHTML = `<div class="chart-empty">${message}</div>`;
 }
 
-export function renderFragmentationChart(container, timeline, hasActivity) {
+export function renderFragmentationChart(container, timeline, hasActivity, opts = {}) {
+  const emptyText = opts.emptyText || "Upload a file to start the chart";
+  const xTitle = opts.xTitle || "Action number";
+  const pointPrefix = opts.pointPrefix || "Action";
   if (!hasActivity || timeline.length === 0) {
-    renderEmpty(container, "Upload a file to start the chart");
+    renderEmpty(container, emptyText);
     return;
   }
 
   const w = 440;
-  const h = 210;
-  const pad = { top: 16, right: 16, bottom: 30, left: 42 };
+  const h = 224;
+  const pad = { top: 16, right: 16, bottom: 42, left: 42 };
   const plotW = w - pad.left - pad.right;
   const plotH = h - pad.top - pad.bottom;
 
@@ -92,7 +95,7 @@ export function renderFragmentationChart(container, timeline, hasActivity) {
       r: points.length > 24 ? 2.5 : 4,
       class: "chart-dot-accent"
     });
-    addEl(circle, "title", {}, `Step ${pt.step} (${pt.action}): ${pt.fragmentation_pct.toFixed(2)}% fragmentation`);
+    addEl(circle, "title", {}, `${pointPrefix} ${pt.step} (${pt.action}): ${pt.fragmentation_pct.toFixed(2)}% fragmentation`);
   }
 
   // X labels (start, mid, end)
@@ -100,25 +103,34 @@ export function renderFragmentationChart(container, timeline, hasActivity) {
   for (const idx of xIndices) {
     addEl(svg, "text", {
       x: xFor(idx).toFixed(1),
-      y: h - 8,
+      y: pad.top + plotH + 15,
       "text-anchor": "middle",
       class: "chart-axis-text"
-    }, `#${timeline[idx].step}`);
+    }, `${timeline[idx].step}`);
   }
+  addEl(svg, "text", {
+    x: (pad.left + plotW / 2).toFixed(1),
+    y: h - 5,
+    "text-anchor": "middle",
+    class: "chart-axis-title"
+  }, xTitle);
 
   container.innerHTML = "";
   container.appendChild(svg);
 }
 
-export function renderUsedFreeChart(container, timeline, poolKb, hasActivity) {
+export function renderUsedFreeChart(container, timeline, poolKb, hasActivity, opts = {}) {
+  const emptyText = opts.emptyText || "Upload a file to start the chart";
+  const xTitle = opts.xTitle || "Action number";
+  const pointPrefix = opts.pointPrefix || "Action";
   if (!hasActivity || timeline.length === 0 || !poolKb) {
-    renderEmpty(container, "Upload a file to start the chart");
+    renderEmpty(container, emptyText);
     return;
   }
 
   const w = 440;
-  const h = 210;
-  const pad = { top: 16, right: 16, bottom: 30, left: 52 };
+  const h = 224;
+  const pad = { top: 16, right: 16, bottom: 42, left: 52 };
   const plotW = w - pad.left - pad.right;
   const plotH = h - pad.top - pad.bottom;
 
@@ -175,7 +187,7 @@ export function renderUsedFreeChart(container, timeline, poolKb, hasActivity) {
         r: n > 24 ? 2.5 : 3.5,
         class: "chart-dot-accent"
       });
-      addEl(dot, "title", {}, `Step ${pt.step} (${pt.action}): Used ${fmtShortMb(pt.used_kb)}, Free ${fmtShortMb(pt.total_free_kb)}`);
+      addEl(dot, "title", {}, `${pointPrefix} ${pt.step} (${pt.action}): Used ${fmtShortMb(pt.used_kb)}, Free ${fmtShortMb(pt.total_free_kb)}`);
     }
   }
 
@@ -186,11 +198,17 @@ export function renderUsedFreeChart(container, timeline, poolKb, hasActivity) {
   for (const idx of xIndices) {
     addEl(svg, "text", {
       x: xFor(idx).toFixed(1),
-      y: h - 8,
+      y: pad.top + plotH + 15,
       "text-anchor": "middle",
       class: "chart-axis-text"
-    }, `#${timeline[idx].step}`);
+    }, `${timeline[idx].step}`);
   }
+  addEl(svg, "text", {
+    x: (pad.left + plotW / 2).toFixed(1),
+    y: h - 5,
+    "text-anchor": "middle",
+    class: "chart-axis-title"
+  }, xTitle);
 
   container.innerHTML = "";
   container.appendChild(svg);
@@ -209,8 +227,8 @@ export function renderFreeBlocksChart(container, blocks, hasActivity) {
   }
 
   const w = 440;
-  const h = 210;
-  const pad = { top: 22, right: 16, bottom: 34, left: 52 };
+  const h = 224;
+  const pad = { top: 22, right: 16, bottom: 44, left: 52 };
   const plotW = w - pad.left - pad.right;
   const plotH = h - pad.top - pad.bottom;
 
@@ -260,13 +278,204 @@ export function renderFreeBlocksChart(container, blocks, hasActivity) {
     if (freeBlocks.length <= 10 || i === 0 || i === freeBlocks.length - 1) {
       addEl(svg, "text", {
         x: (x + barW / 2).toFixed(1),
-        y: h - 10,
+        y: pad.top + plotH + 15,
         "text-anchor": "middle",
         class: "chart-axis-text"
       }, `#${i + 1}`);
     }
   });
 
+  addEl(svg, "text", {
+    x: (pad.left + plotW / 2).toFixed(1),
+    y: h - 5,
+    "text-anchor": "middle",
+    class: "chart-axis-title"
+  }, "Free block # (address order)");
+
   container.innerHTML = "";
   container.appendChild(svg);
 }
+
+const COMPARE_METRICS = {
+  avg_fragmentation: { label: "Avg fragmentation (%)", higherBetter: false, fmt: (v) => `${v.toFixed(2)}%` },
+  success_rate: { label: "Success rate (%)", higherBetter: true, fmt: (v) => `${v.toFixed(1)}%` },
+  avg_wait: { label: "Average wait (ticks)", higherBetter: false, fmt: (v) => `${v.toFixed(2)}` },
+  avg_search_length: { label: "Avg search (blocks)", higherBetter: false, fmt: (v) => `${v.toFixed(2)}` },
+  makespan: { label: "Makespan (ticks)", higherBetter: false, fmt: (v) => `${Math.round(v)}` }
+};
+
+export function renderStrategyComparisonChart(container, results, metricKey = "avg_fragmentation") {
+  if (!results || results.length === 0) {
+    renderEmpty(container, "Run 4-strategy comparison to view chart");
+    return;
+  }
+
+  const meta = COMPARE_METRICS[metricKey] || COMPARE_METRICS.avg_fragmentation;
+  const values = results.map((r) => Number(r[metricKey] ?? 0));
+  const rawMax = Math.max(...values, 0);
+  const maxVal = metricKey === "success_rate" ? 100 : (rawMax > 0 ? rawMax * 1.15 : 1);
+  const bestVal = meta.higherBetter ? Math.max(...values) : Math.min(...values);
+
+  const w = 480;
+  const h = 232;
+  const pad = { top: 24, right: 16, bottom: 44, left: 50 };
+  const plotW = w - pad.left - pad.right;
+  const plotH = h - pad.top - pad.bottom;
+
+  const svg = createSvg(w, h, `Strategy comparison bar chart for ${meta.label}`);
+
+  for (const frac of [0, 0.5, 1]) {
+    const y = pad.top + plotH - frac * plotH;
+    addEl(svg, "line", { x1: pad.left, y1: y, x2: w - pad.right, y2: y, class: "chart-grid" });
+    const tickVal = maxVal * frac;
+    const label = metricKey === "success_rate" ? `${Math.round(tickVal)}%` : tickVal >= 10 ? tickVal.toFixed(0) : tickVal.toFixed(1);
+    addEl(svg, "text", { x: pad.left - 8, y: y + 4, "text-anchor": "end", class: "chart-axis-text" }, label);
+  }
+
+  addEl(svg, "line", { x1: pad.left, y1: pad.top, x2: pad.left, y2: pad.top + plotH, class: "chart-axis-line" });
+  addEl(svg, "line", { x1: pad.left, y1: pad.top + plotH, x2: w - pad.right, y2: pad.top + plotH, class: "chart-axis-line" });
+
+  const slotW = plotW / results.length;
+  const barW = Math.min(60, slotW * 0.58);
+
+  results.forEach((r, i) => {
+    const val = Number(r[metricKey] ?? 0);
+    const x = pad.left + i * slotW + (slotW - barW) / 2;
+    const barH = Math.max(2, (val / maxVal) * plotH);
+    const y = pad.top + plotH - barH;
+    const isBest = val === bestVal;
+
+    const rect = addEl(svg, "rect", {
+      x: x.toFixed(1),
+      y: y.toFixed(1),
+      width: barW.toFixed(1),
+      height: barH.toFixed(1),
+      rx: 4,
+      class: isBest ? "chart-bar-accent" : "chart-bar-muted"
+    });
+    addEl(rect, "title", {}, `${r.strategy}: ${meta.fmt(val)}${isBest ? " (best)" : ""}`);
+
+    addEl(svg, "text", {
+      x: (x + barW / 2).toFixed(1),
+      y: Math.max(13, y - 5).toFixed(1),
+      "text-anchor": "middle",
+      class: "chart-value-text"
+    }, meta.fmt(val));
+
+    addEl(svg, "text", {
+      x: (x + barW / 2).toFixed(1),
+      y: pad.top + plotH + 15,
+      "text-anchor": "middle",
+      class: "chart-axis-text"
+    }, r.strategy);
+  });
+
+  addEl(svg, "text", {
+    x: (pad.left + plotW / 2).toFixed(1),
+    y: h - 5,
+    "text-anchor": "middle",
+    class: "chart-axis-title"
+  }, "Strategy");
+
+  container.innerHTML = "";
+  container.appendChild(svg);
+}
+
+const SERIES_STYLES = {
+  "First Fit": { color: "#0f766e", dash: "" },
+  "Best Fit":  { color: "#0369a1", dash: "6 3" },
+  "Worst Fit": { color: "#b45309", dash: "2 3" },
+  "Smart":     { color: "#be123c", dash: "" }
+};
+
+export function renderTimingChart(container, rows) {
+  if (!rows || rows.length === 0) {
+    renderEmpty(container, "No timing_results.csv data found");
+    return;
+  }
+
+  const procCounts = [...new Set(rows.map((r) => r.processes))].sort((a, b) => a - b);
+  const strategies = ["First Fit", "Best Fit", "Worst Fit", "Smart"];
+  const maxSec = Math.max(...rows.map((r) => r.average_elapsed_seconds), 0.1) * 1.12;
+
+  const w = 480;
+  const h = 232;
+  const pad = { top: 20, right: 20, bottom: 44, left: 54 };
+  const plotW = w - pad.left - pad.right;
+  const plotH = h - pad.top - pad.bottom;
+
+  const svg = createSvg(w, h, "Runtime versus process count from timing_results.csv");
+
+  for (const frac of [0, 0.5, 1]) {
+    const y = pad.top + plotH - frac * plotH;
+    addEl(svg, "line", { x1: pad.left, y1: y, x2: w - pad.right, y2: y, class: "chart-grid" });
+    addEl(svg, "text", {
+      x: pad.left - 8,
+      y: y + 4,
+      "text-anchor": "end",
+      class: "chart-axis-text"
+    }, `${(maxSec * frac).toFixed(1)}s`);
+  }
+
+  addEl(svg, "line", { x1: pad.left, y1: pad.top, x2: pad.left, y2: pad.top + plotH, class: "chart-axis-line" });
+  addEl(svg, "line", { x1: pad.left, y1: pad.top + plotH, x2: w - pad.right, y2: pad.top + plotH, class: "chart-axis-line" });
+
+  const xForIdx = (i) => (procCounts.length === 1 ? pad.left + plotW / 2 : pad.left + (i / (procCounts.length - 1)) * plotW);
+  const yForSec = (s) => pad.top + plotH - (s / maxSec) * plotH;
+
+  for (const strat of strategies) {
+    const pts = procCounts.map((pc, i) => {
+      const match = rows.find((r) => r.strategy === strat && r.processes === pc);
+      return match ? [xForIdx(i), yForSec(match.average_elapsed_seconds), match] : null;
+    }).filter(Boolean);
+
+    if (pts.length === 0) continue;
+    const style = SERIES_STYLES[strat] || { color: "#0f766e", dash: "" };
+
+    if (pts.length >= 2) {
+      const d = pts.map(([x, y], idx) => `${idx === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
+      const pathAttrs = {
+        d,
+        fill: "none",
+        stroke: style.color,
+        "stroke-width": "2.3",
+        "stroke-linecap": "round",
+        "stroke-linejoin": "round"
+      };
+      if (style.dash) pathAttrs["stroke-dasharray"] = style.dash;
+      addEl(svg, "path", pathAttrs);
+    }
+
+    for (const [x, y, row] of pts) {
+      const dot = addEl(svg, "circle", {
+        cx: x.toFixed(1),
+        cy: y.toFixed(1),
+        r: 4,
+        fill: style.color,
+        stroke: "var(--surface)",
+        "stroke-width": "1.5"
+      });
+      addEl(dot, "title", {}, `${strat} (${row.processes.toLocaleString()} processes): ${row.average_elapsed_seconds.toFixed(4)} s avg (${row.repetitions} runs)`);
+    }
+  }
+
+  procCounts.forEach((pc, i) => {
+    addEl(svg, "text", {
+      x: xForIdx(i).toFixed(1),
+      y: pad.top + plotH + 15,
+      "text-anchor": "middle",
+      class: "chart-axis-text"
+    }, pc.toLocaleString());
+  });
+
+  addEl(svg, "text", {
+    x: (pad.left + plotW / 2).toFixed(1),
+    y: h - 5,
+    "text-anchor": "middle",
+    class: "chart-axis-title"
+  }, "Process count (timing_results.csv)");
+
+  container.innerHTML = "";
+  container.appendChild(svg);
+}
+
