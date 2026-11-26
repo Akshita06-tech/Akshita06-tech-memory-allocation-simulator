@@ -1016,6 +1016,22 @@ body {
   fill-opacity: 1;
 }
 
+.chart-bar-muted {
+  fill: var(--border-strong);
+  fill-opacity: 0.78;
+}
+
+.chart-bar-muted:hover {
+  fill-opacity: 1;
+}
+
+.chart-axis-title {
+  fill: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 /* History table controls & action pills */
 .history-controls {
   display: flex;
@@ -1064,7 +1080,154 @@ body {
   color: var(--err-text);
 }
 
+/* Simulation controls & Phase C additions */
+.sim-clock-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sim-clock-badge {
+  font-size: 0.88rem;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  padding: 5px 12px;
+  border-radius: 999px;
+}
+
+.sim-form-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.inline-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.input {
+  font-family: inherit;
+  font-size: 0.86rem;
+  color: var(--text);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 7px 9px;
+  width: 100%;
+}
+
+.input-sm {
+  width: auto;
+  padding: 5px 9px;
+  font-size: 0.82rem;
+}
+
+.sim-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.sim-btn-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.sim-live-kpis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.sim-live-kpis strong {
+  color: var(--text);
+}
+
+.table-scroll {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.state-pill {
+  display: inline-block;
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+}
+
+.state-pill.is-running {
+  background: var(--ok-bg);
+  border-color: var(--ok-border);
+  color: var(--ok-text);
+}
+
+.state-pill.is-waiting {
+  background: var(--warn-bg);
+  border-color: var(--warn-border);
+  color: var(--warn-text);
+}
+
+.state-pill.is-rejected {
+  background: var(--err-bg);
+  border-color: var(--err-border);
+  color: var(--err-text);
+}
+
+.state-pill.is-completed {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.is-best-cell {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.exp-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.limits-list {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  display: grid;
+  gap: 6px;
+}
+
 @media (max-width: 960px) {
+  .sim-form-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
   .workspace-grid {
     grid-template-columns: 1fr;
   }
@@ -1077,6 +1240,9 @@ body {
 }
 
 @media (max-width: 600px) {
+  .sim-form-grid {
+    grid-template-columns: 1fr 1fr;
+  }
   .container {
     padding: 0 14px;
   }

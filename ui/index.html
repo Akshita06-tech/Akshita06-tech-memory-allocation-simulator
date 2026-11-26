@@ -337,12 +337,322 @@
       </section>
     </section>
 
-    <!-- Simulation tab (separated per plan; implemented in Phase C) -->
-    <section id="panel-simulation" class="panel" role="tabpanel" aria-labelledby="tab-btn-simulation" hidden>
-      <div class="empty-state">
-        <h2>Simulation mode (Phase C)</h2>
-        <p>Generated file/program workloads, FIFO waiting queue ticks, 4-strategy comparison, and the experiment CSV explorer are scheduled for Phase C so Interactive and Simulation modes stay cleanly separated.</p>
+    <!-- Simulation tab (Phase C) -->
+    <section id="panel-simulation" role="tabpanel" aria-labelledby="tab-btn-simulation" hidden>
+      <!-- Workload configuration & playback controls -->
+      <section class="panel" aria-labelledby="sim-controls-heading">
+        <div class="panel-head">
+          <div>
+            <h2 id="sim-controls-heading">Workload simulation</h2>
+            <p class="panel-sub">Uses the seeded generators in process.c, FIFO waiting queue, and linked-list allocator on a fresh pool.</p>
+          </div>
+          <div class="sim-clock-group">
+            <span class="sim-clock-badge">Tick <strong id="sim-tick-val">0</strong></span>
+            <span id="sim-status-badge" class="count-badge">Ready</span>
+          </div>
+        </div>
+
+        <div class="sim-form-grid">
+          <label class="field">
+            <span>Profile</span>
+            <select id="sim-mode" class="input">
+              <option value="file" selected>File profiles (txt/docx/xlsx/pdf/pptx)</option>
+              <option value="program">Program profiles (calc/textproc/media/browser)</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Pattern</span>
+            <select id="sim-pattern" class="input">
+              <option value="light">Light</option>
+              <option value="balanced" selected>Balanced</option>
+              <option value="heavy">Heavy</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Pool size</span>
+            <select id="sim-pool" class="input">
+              <option value="1024">1,024 KB (1 MB)</option>
+              <option value="2048">2,048 KB (2 MB)</option>
+              <option value="4096" selected>4,096 KB (4 MB)</option>
+              <option value="16384">16,384 KB (16 MB)</option>
+              <option value="65536">65,536 KB (64 MB)</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Seed</span>
+            <input id="sim-seed" class="input" type="number" value="42" min="1" step="1">
+          </label>
+          <label class="field">
+            <span>Processes</span>
+            <input id="sim-count" class="input" type="number" value="40" min="1" max="2000" step="1">
+          </label>
+          <label class="field">
+            <span>Strategy (tick runner)</span>
+            <select id="sim-strategy" class="input">
+              <option value="first" selected>First Fit</option>
+              <option value="best">Best Fit</option>
+              <option value="worst">Worst Fit</option>
+              <option value="smart">Smart</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="sim-toolbar">
+          <div class="sim-btn-group">
+            <button type="button" id="sim-generate-btn" class="btn btn-primary">Generate &amp; reset</button>
+            <button type="button" id="sim-step-btn" class="btn btn-secondary">Step (+1 tick)</button>
+            <button type="button" id="sim-play-btn" class="btn btn-secondary">Play</button>
+            <button type="button" id="sim-reset-btn" class="btn btn-ghost">Reset</button>
+          </div>
+          <div class="sim-btn-group">
+            <label class="inline-field">
+              <span>Speed</span>
+              <select id="sim-speed" class="input input-sm">
+                <option value="1">1× (400 ms)</option>
+                <option value="2" selected>2× (180 ms)</option>
+                <option value="5">5× (70 ms)</option>
+                <option value="10">10× (fast)</option>
+              </select>
+            </label>
+            <button type="button" id="sim-compare-btn" class="btn btn-primary">Compare all 4 strategies</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Live simulation memory map for current tick -->
+      <section class="panel map-panel" aria-labelledby="sim-map-heading">
+        <div class="panel-head">
+          <div>
+            <h2 id="sim-map-heading">Simulation memory map (current tick)</h2>
+            <p class="panel-sub" id="sim-map-sub">Pool 4,096 KB · Used 0 KB · Free 4,096 KB · Fragmentation 0.00%</p>
+          </div>
+          <div class="sim-live-kpis">
+            <span>First-try: <strong id="sim-kpi-success">0.0%</strong></span>
+            <span>Frag / OOM: <strong id="sim-kpi-fails">0 / 0</strong></span>
+            <span>Avg wait: <strong id="sim-kpi-wait">0.00</strong></span>
+            <span>Compactions: <strong id="sim-kpi-compacts">0</strong></span>
+          </div>
+        </div>
+        <div class="map-stage">
+          <div id="sim-memory-map" class="memory-map" role="list" aria-label="Simulation memory blocks"></div>
+          <div id="sim-map-tooltip" class="map-tooltip" hidden role="status"></div>
+        </div>
+        <div class="map-axis" aria-hidden="true">
+          <span>0 KB</span>
+          <span id="sim-axis-mid">2,048 KB</span>
+          <span id="sim-axis-end">4,096 KB</span>
+        </div>
+      </section>
+
+      <!-- Tick trace chart + FIFO waiting queue -->
+      <div class="workspace-grid">
+        <section class="panel" aria-labelledby="sim-trace-heading">
+          <div class="panel-head">
+            <div>
+              <h2 id="sim-trace-heading">Fragmentation over simulation ticks</h2>
+              <p class="panel-sub">External fragmentation sampled at every tick.</p>
+            </div>
+          </div>
+          <div id="sim-chart-frag" class="chart-body"></div>
+        </section>
+
+        <section class="panel" aria-labelledby="sim-queue-heading">
+          <div class="panel-head">
+            <div>
+              <h2 id="sim-queue-heading">FIFO waiting queue</h2>
+              <p class="panel-sub">Processes queued in arrival order waiting for memory release.</p>
+            </div>
+            <span id="sim-queue-badge" class="count-badge">0 waiting</span>
+          </div>
+          <div id="sim-queue-empty" class="empty-state">
+            <p>Waiting queue is empty at the current tick.</p>
+          </div>
+          <div id="sim-queue-wrap" class="table-wrap" hidden>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Process</th>
+                  <th>Size</th>
+                  <th>Wait ticks</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody id="sim-queue-tbody"></tbody>
+            </table>
+          </div>
+        </section>
       </div>
+
+      <!-- Process table -->
+      <section class="panel" aria-labelledby="sim-proc-heading">
+        <div class="panel-head">
+          <div>
+            <h2 id="sim-proc-heading">Simulation process table</h2>
+            <p class="panel-sub">Lifecycle state, address range, and waiting ticks per generated process.</p>
+          </div>
+          <div class="segmented" id="sim-proc-filter" role="group" aria-label="Filter processes by state">
+            <button type="button" class="seg-btn is-active" data-state="ALL">All</button>
+            <button type="button" class="seg-btn" data-state="RUNNING">Running</button>
+            <button type="button" class="seg-btn" data-state="WAITING">Waiting</button>
+            <button type="button" class="seg-btn" data-state="COMPLETED">Finished</button>
+            <button type="button" class="seg-btn" data-state="REJECTED">Rejected</button>
+          </div>
+        </div>
+        <div class="table-wrap table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Size</th>
+                <th>Arrive / dur</th>
+                <th>State</th>
+                <th>Address range</th>
+                <th>Wait</th>
+              </tr>
+            </thead>
+            <tbody id="sim-proc-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 4-Strategy comparison -->
+      <section class="panel" aria-labelledby="compare-heading">
+        <div class="panel-head">
+          <div>
+            <h2 id="compare-heading">4-strategy fair comparison</h2>
+            <p class="panel-sub">Replays the identical process list on fresh pools via sim_run(), calculate_rank_sums(), and recommend().</p>
+          </div>
+        </div>
+
+        <div id="compare-recommendation" class="fit-box is-ok" hidden></div>
+
+        <div id="compare-table-wrap" class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Strategy</th>
+                <th>Success %</th>
+                <th>Frag fails</th>
+                <th>OOM fails</th>
+                <th>Avg wait</th>
+                <th>Makespan</th>
+                <th>Avg frag %</th>
+                <th>Avg search</th>
+                <th>Compactions</th>
+                <th>Rank sum</th>
+              </tr>
+            </thead>
+            <tbody id="compare-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Strategy comparison bar chart + Timing chart -->
+      <div class="workspace-grid">
+        <section class="panel" aria-labelledby="compare-chart-heading">
+          <div class="panel-head">
+            <div>
+              <h2 id="compare-chart-heading">Strategy comparison chart</h2>
+              <p class="panel-sub">Select a metric from the live 4-strategy comparison.</p>
+            </div>
+            <select id="compare-metric-select" class="input input-sm" aria-label="Comparison chart metric">
+              <option value="avg_fragmentation" selected>Avg fragmentation (%)</option>
+              <option value="success_rate">Success rate (%)</option>
+              <option value="avg_wait">Average wait (ticks)</option>
+              <option value="avg_search_length">Avg search length (blocks)</option>
+              <option value="makespan">Makespan (ticks)</option>
+            </select>
+          </div>
+          <div id="chart-compare-bars" class="chart-body"></div>
+        </section>
+
+        <section class="panel" aria-labelledby="timing-chart-heading">
+          <div class="panel-head">
+            <div>
+              <h2 id="timing-chart-heading">Runtime vs process count</h2>
+              <p class="panel-sub">Measured averages (3 runs, 16,384 KB pool) from timing_results.csv.</p>
+            </div>
+            <div class="chart-legend">
+              <span class="legend-item"><span class="swatch" style="background:#0f766e"></span>First</span>
+              <span class="legend-item"><span class="swatch" style="background:#0369a1"></span>Best</span>
+              <span class="legend-item"><span class="swatch" style="background:#b45309"></span>Worst</span>
+              <span class="legend-item"><span class="swatch" style="background:#be123c"></span>Smart</span>
+            </div>
+          </div>
+          <div id="chart-timing" class="chart-body"></div>
+        </section>
+      </div>
+
+      <!-- Experiment CSV Explorer -->
+      <section class="panel" aria-labelledby="exp-heading">
+        <div class="panel-head">
+          <div>
+            <h2 id="exp-heading">Experiment explorer (experiment_results.csv)</h2>
+            <p class="panel-sub" id="exp-summary">30-seed averages across file and program profiles, light/balanced/heavy patterns, and pool sizes.</p>
+          </div>
+          <div class="exp-filters">
+            <select id="exp-mode" class="input input-sm" aria-label="Filter experiment profile">
+              <option value="all" selected>All profiles</option>
+              <option value="file">File profiles</option>
+              <option value="program">Program profiles</option>
+            </select>
+            <select id="exp-pattern" class="input input-sm" aria-label="Filter experiment pattern">
+              <option value="all" selected>All patterns</option>
+              <option value="light">Light</option>
+              <option value="balanced">Balanced</option>
+              <option value="heavy">Heavy</option>
+            </select>
+            <select id="exp-pool" class="input input-sm" aria-label="Filter experiment pool size">
+              <option value="all" selected>All pool sizes</option>
+              <option value="1024">1,024 KB</option>
+              <option value="4096">4,096 KB</option>
+              <option value="16384">16,384 KB</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Strategy</th>
+                <th>Runs</th>
+                <th>Avg success %</th>
+                <th>Avg frag fails</th>
+                <th>Avg OOM fails</th>
+                <th>Avg wait</th>
+                <th>Avg makespan</th>
+                <th>Avg frag %</th>
+                <th>Avg search</th>
+                <th>Avg compactions</th>
+                <th>Avg rank sum</th>
+              </tr>
+            </thead>
+            <tbody id="exp-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Modelling limitations -->
+      <section class="panel" aria-labelledby="limits-heading">
+        <div class="panel-head">
+          <div>
+            <h2 id="limits-heading">Modelling limitations</h2>
+            <p class="panel-sub">Scope and design assumptions documented in README.md.</p>
+          </div>
+        </div>
+        <ul class="limits-list">
+          <li>File size is a measurable model for the memory request, not a claim about actual runtime RAM usage.</li>
+          <li>Program-profile sizes and durations are illustrative simulation parameters, not measurements of those applications' RAM.</li>
+          <li>Addresses are simulated offsets inside the pool, not physical addresses.</li>
+          <li>Smart allocation and recommendation are rule-based, not machine learning.</li>
+          <li>FIFO retry can delay a large request; this is a known limitation.</li>
+          <li>In Interactive mode, the 12.5% reserved System partition at address 0 is a simulated device assumption.</li>
+        </ul>
+      </section>
     </section>
   </main>
 

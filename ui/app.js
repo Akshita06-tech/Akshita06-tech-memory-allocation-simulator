@@ -1,7 +1,9 @@
 import {
   renderFragmentationChart,
   renderUsedFreeChart,
-  renderFreeBlocksChart
+  renderFreeBlocksChart,
+  renderStrategyComparisonChart,
+  renderTimingChart
 } from "/charts.js";
 
 const PROCESS_PALETTE = [
@@ -48,7 +50,19 @@ const state = {
   history: [],
   timeline: [],
   historyFilter: "all",
-  stepCounter: 0
+  stepCounter: 0,
+  simTab: {
+    initialized: false,
+    runner: null,
+    tickTimeline: [],
+    playing: false,
+    timerId: null,
+    procFilter: "ALL",
+    compareData: null,
+    compareMetric: "avg_fragmentation",
+    timingRows: null,
+    expRows: null
+  }
 };
 
 const el = (id) => document.getElementById(id);
@@ -269,8 +283,16 @@ function renderCharts() {
   const hasActivity = state.history.length > 0;
   const poolKb = state.sim ? state.sim.pool_kb : 0;
   const blocks = state.sim ? state.sim.blocks : [];
-  renderFragmentationChart(el("chart-frag"), state.timeline, hasActivity);
-  renderUsedFreeChart(el("chart-used-free"), state.timeline, poolKb, hasActivity);
+  renderFragmentationChart(el("chart-frag"), state.timeline, hasActivity, {
+    xTitle: "Action number",
+    pointPrefix: "Action",
+    emptyText: "Upload a file to start the chart"
+  });
+  renderUsedFreeChart(el("chart-used-free"), state.timeline, poolKb, hasActivity, {
+    xTitle: "Action number",
+    pointPrefix: "Action",
+    emptyText: "Upload a file to start the chart"
+  });
   renderFreeBlocksChart(el("chart-free-blocks"), blocks, hasActivity);
 }
 
@@ -894,7 +916,7 @@ function setupEvents() {
   });
 
   document.querySelectorAll(".mode-tab").forEach((tab) => {
-    tab.addEventListener("click", () => {
+    tab.addEventListener("click", async () => {
       const target = tab.dataset.tab;
       document.querySelectorAll(".mode-tab").forEach((t) => {
         const active = t === tab;
@@ -903,12 +925,25 @@ function setupEvents() {
       });
       el("panel-interactive").hidden = target !== "interactive";
       el("panel-simulation").hidden = target !== "simulation";
+      if (target === "simulation" && state.simModule) {
+        await state.simModule.ensureLoaded();
+      }
     });
   });
+
+  state.simModule.setupEvents();
 }
 
 async function boot() {
   initTheme();
+  const { createSimulationController } = await import("/sim.js");
+  state.simModule = createSimulationController({
+    el,
+    apiJson,
+    escapeHtml,
+    fmtKb,
+    colorForPid
+  });
   setupEvents();
   state.sim = await apiJson("/api/state");
   renderAll();
