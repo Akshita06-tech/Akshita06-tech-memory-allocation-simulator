@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Device memory — Memory allocation simulator</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+
+  <header class="top-header">
+    <div class="container header-grid">
+      <div class="brand-block">
+        <div class="title-row">
+          <h1>Device memory</h1>
+          <span class="sim-pill">Simulated device</span>
+        </div>
+        <p class="device-note">
+          Simulated device pool, not real RAM. The reserved
+          <strong id="system-pct-note">12.5%</strong> System area at the start is a design assumption and cannot be deleted.
+        </p>
+      </div>
+
+      <div class="header-controls">
+        <div class="control-group" role="group" aria-label="Device capacity">
+          <span class="control-label">Capacity</span>
+          <div class="segmented" id="capacity-selector">
+            <button type="button" class="seg-btn" data-pool="16384">16 MB</button>
+            <button type="button" class="seg-btn is-active" data-pool="65536">64 MB</button>
+            <button type="button" class="seg-btn" data-pool="262144">256 MB</button>
+          </div>
+        </div>
+
+        <div class="control-group" role="group" aria-label="Allocation strategy">
+          <span class="control-label">Strategy</span>
+          <div class="segmented" id="strategy-selector">
+            <button type="button" class="seg-btn is-active" data-strategy="first">First Fit</button>
+            <button type="button" class="seg-btn" data-strategy="best">Best Fit</button>
+            <button type="button" class="seg-btn" data-strategy="worst">Worst Fit</button>
+            <button type="button" class="seg-btn" data-strategy="smart">Smart</button>
+          </div>
+        </div>
+
+        <div class="header-actions">
+          <button type="button" id="compact-btn" class="btn btn-secondary">Compact</button>
+          <button type="button" id="reset-btn" class="btn btn-secondary">Reset</button>
+          <button type="button" id="theme-toggle" class="btn btn-ghost" aria-label="Toggle light or dark theme">
+            <span id="theme-label">Dark mode</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="container capacity-row">
+      <div class="capacity-meta">
+        <span id="capacity-summary" class="capacity-text">8 of 64 MB used</span>
+        <span id="capacity-detail" class="capacity-subtext">8,192 KB system · 0 KB user · 57,344 KB free</span>
+      </div>
+      <div class="capacity-bar" role="img" aria-label="Device memory capacity usage">
+        <div id="cap-system-fill" class="cap-fill cap-system" style="width: 12.5%"></div>
+        <div id="cap-user-fill" class="cap-fill cap-user" style="width: 0%"></div>
+      </div>
+    </div>
+  </header>
+
+  <nav class="mode-nav" aria-label="Simulator modes">
+    <div class="container mode-tabs" role="tablist">
+      <button type="button" role="tab" id="tab-btn-interactive" class="mode-tab is-active"
+              aria-selected="true" aria-controls="panel-interactive" data-tab="interactive">
+        Interactive
+      </button>
+      <button type="button" role="tab" id="tab-btn-simulation" class="mode-tab"
+              aria-selected="false" aria-controls="panel-simulation" data-tab="simulation">
+        Simulation
+      </button>
+    </div>
+  </nav>
+
+  <main id="main-content" class="container main-shell">
+    <section id="panel-interactive" role="tabpanel" aria-labelledby="tab-btn-interactive">
+      <!-- Full-width memory map -->
+      <section class="panel map-panel" aria-labelledby="map-heading">
+        <div class="panel-head">
+          <div>
+            <h2 id="map-heading">Memory map</h2>
+            <p class="panel-sub">Address-ordered linked list from 0 to <span id="map-end-label">64 MB</span>. Hover or focus any block to inspect its range.</p>
+          </div>
+          <div class="legend" aria-label="Memory block legend">
+            <span class="legend-item"><span class="swatch swatch-system"></span>System (locked)</span>
+            <span class="legend-item"><span class="swatch swatch-process"></span>Stored file</span>
+            <span class="legend-item"><span class="swatch swatch-free"></span>Free block</span>
+            <span class="legend-item"><span class="swatch swatch-new"></span>Newly placed</span>
+          </div>
+        </div>
+
+        <div class="map-stage">
+          <div id="memory-map" class="memory-map" role="list" aria-label="Device memory blocks"></div>
+          <div id="map-tooltip" class="map-tooltip" hidden role="status"></div>
+        </div>
+
+        <div id="map-axis" class="map-axis" aria-hidden="true">
+          <span>0 MB</span>
+          <span id="axis-mid">32 MB</span>
+          <span id="axis-end">64 MB</span>
+        </div>
+      </section>
+
+      <!-- Primary 2-column workspace -->
+      <div class="workspace-grid">
+        <!-- Left: File upload & pre-check -->
+        <section class="panel" aria-labelledby="upload-heading">
+          <div class="panel-head">
+            <div>
+              <h2 id="upload-heading">Store file in device memory</h2>
+              <p class="panel-sub">Files are measured in bytes, rounded up to KB, and immediately discarded after measurement.</p>
+            </div>
+          </div>
+
+          <div id="dropzone" class="dropzone" tabindex="0" role="button"
+               aria-label="Drop a file here or press Enter to choose a file">
+            <input id="file-input" type="file" class="sr-only">
+            <p class="drop-title">Drop a file here, or <span class="drop-link">browse from your computer</span></p>
+            <p class="drop-hint">Tracks size and simulated address only (max upload 260 MB; empty and duplicate names rejected).</p>
+          </div>
+
+          <div id="precheck-card" class="precheck-card" hidden>
+            <div class="precheck-header">
+              <div>
+                <div class="precheck-label">Pre-allocation check</div>
+                <h3 id="pre-name" class="pre-filename"></h3>
+              </div>
+              <button type="button" id="clear-file-btn" class="btn btn-ghost btn-sm">Clear</button>
+            </div>
+
+            <dl class="kv-grid">
+              <div>
+                <dt>Real size</dt>
+                <dd id="pre-bytes">—</dd>
+              </div>
+              <div>
+                <dt>Rounded up (KB)</dt>
+                <dd id="pre-kb">—</dd>
+              </div>
+              <div>
+                <dt>Total free</dt>
+                <dd id="pre-total-free">—</dd>
+              </div>
+              <div>
+                <dt>Largest free block</dt>
+                <dd id="pre-largest-free">—</dd>
+              </div>
+            </dl>
+
+            <div id="pre-fit-box" class="fit-box"></div>
+
+            <div class="precheck-actions">
+              <button type="button" id="confirm-alloc-btn" class="btn btn-primary">
+                Store in device memory
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Right: Receipt / Failure / Delete Diff -->
+        <section class="panel" aria-labelledby="outcome-heading">
+          <div class="panel-head">
+            <div>
+              <h2 id="outcome-heading">Operation outcome</h2>
+              <p class="panel-sub">Placement receipt, failure diagnosis, or delete coalescing diff.</p>
+            </div>
+          </div>
+
+          <div id="outcome-empty" class="empty-state">
+            <p>Select or drop a file on the left to preview placement, or delete a stored file below to inspect neighbour coalescing.</p>
+          </div>
+
+          <div id="receipt-card" class="outcome-card outcome-success" hidden></div>
+          <div id="failure-card" class="outcome-card outcome-error" hidden></div>
+          <div id="diff-card" class="outcome-card outcome-diff" hidden></div>
+        </section>
+      </div>
+
+      <!-- 8 Stats cards -->
+      <section class="stats-section" aria-labelledby="stats-heading">
+        <h2 id="stats-heading" class="section-title">Live memory metrics</h2>
+        <div class="stats-grid">
+          <article class="stat-card">
+            <span class="stat-label">Free memory</span>
+            <strong id="stat-free" class="stat-value">—</strong>
+            <span id="stat-free-sub" class="stat-sub">—</span>
+          </article>
+          <article class="stat-card">
+            <span class="stat-label">Used memory</span>
+            <strong id="stat-used" class="stat-value">—</strong>
+            <span id="stat-used-sub" class="stat-sub">—</span>
+          </article>
+          <article class="stat-card">
+            <span class="stat-label">Largest free block</span>
+            <strong id="stat-largest" class="stat-value">—</strong>
+            <span id="stat-largest-sub" class="stat-sub">—</span>
+          </article>
+          <article class="stat-card">
+            <span class="stat-label">Free block count</span>
+            <strong id="stat-fragments" class="stat-value">—</strong>
+            <span class="stat-sub">Linked-list holes</span>
+          </article>
+          <article class="stat-card">
+            <span class="stat-label">External fragmentation</span>
+            <strong id="stat-frag-pct" class="stat-value">—</strong>
+            <span class="stat-sub">(1 − largest / total free)</span>
+          </article>
+          <article class="stat-card">
+            <span class="stat-label">Failures by type</span>
+            <strong id="stat-failures" class="stat-value">—</strong>
+            <span id="stat-failures-sub" class="stat-sub">Frag / Out of memory</span>
+          </article>
+          <article class="stat-card">
+            <span class="stat-label">Average wait</span>
+            <strong id="stat-wait" class="stat-value">—</strong>
+            <span class="stat-sub">Interactive mode: 0 ticks</span>
+          </article>
+          <article class="stat-card">
+            <span class="stat-label">Compactions</span>
+            <strong id="stat-compactions" class="stat-value">—</strong>
+            <span id="stat-compactions-sub" class="stat-sub">0 KB moved</span>
+          </article>
+        </div>
+      </section>
+
+      <!-- Active allocations table (for deleting & inspecting) -->
+      <section class="panel" aria-labelledby="allocs-heading">
+        <div class="panel-head">
+          <div>
+            <h2 id="allocs-heading">Stored partitions and files</h2>
+            <p class="panel-sub">Delete any stored file to release its block and inspect neighbour coalescing.</p>
+          </div>
+          <span id="alloc-count-badge" class="count-badge">1 partition</span>
+        </div>
+
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Real size</th>
+                <th>Allocated</th>
+                <th>Address range</th>
+                <th>Strategy</th>
+                <th class="col-action">Action</th>
+              </tr>
+            </thead>
+            <tbody id="allocs-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <!-- Simulation tab (separated per plan; implemented in Phase C) -->
+    <section id="panel-simulation" class="panel" role="tabpanel" aria-labelledby="tab-btn-simulation" hidden>
+      <div class="empty-state">
+        <h2>Simulation mode (Phase C)</h2>
+        <p>Generated file/program workloads, FIFO waiting queue ticks, 4-strategy comparison, and the experiment CSV explorer are scheduled for Phase C so Interactive and Simulation modes stay cleanly separated.</p>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
