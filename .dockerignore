@@ -1,0 +1,8 @@
+.git
+.vscode
+__pycache__
+*.pyc
+ui/.tmp_uploads
+ui/bridge.exe
+tests.exe
+simulator.exe

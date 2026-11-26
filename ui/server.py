@@ -33,7 +33,7 @@ CORE_SOURCES = [
     ROOT_DIR / "process.h",
 ]
 
-HOST = "127.0.0.1"
+HOST = "0.0.0.0"
 DEFAULT_PORT = 8080
 MAX_UPLOAD_BYTES = 260 * 1024 * 1024  # 260 MB cap (supports testing > 256 MB pool overflow)
 STATIC_FILES = {
@@ -377,8 +377,7 @@ def main() -> None:
 
     server = ThreadingHTTPServer((HOST, args.port), SimulatorHandler)
     print(f"Memory Allocation Simulator UI running at http://{HOST}:{args.port}")
-    print("Bound to localhost only (127.0.0.1). Press Ctrl+C to stop.")
-    try:
+    print("Bound to all network interfaces. Press Ctrl+C to stop.")
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nShutting down...")
