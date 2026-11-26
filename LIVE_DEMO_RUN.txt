@@ -1,0 +1,124 @@
+======================================================
+ INTELLIGENT MEMORY ALLOCATION & FRAGMENTATION SIMULATOR
+ C11 | First Fit | Best Fit | Worst Fit | Smart
+======================================================
+
+Current pool: 2048 KB
+1. Add real files and simulate
+2. Generate file-profile workload
+3. Generate program-profile workload
+4. Compare all strategies + recommendation
+5. Run full experiments (30 seeds + timing)
+6. Optional data-storage demo
+7. Change memory pool
+0. Exit
+Choice: Enter file paths one by one. Type DONE to finish.
+File path (or DONE): Simulated run duration in ticks (e.g. 5): Added sample_a.txt: 102400 bytes -> 100 KB units
+File path (or DONE): Simulated run duration in ticks (e.g. 5): Added sample_b.txt: 307200 bytes -> 300 KB units
+File path (or DONE): Simulated run duration in ticks (e.g. 5): Added sample_c.txt: 512000 bytes -> 500 KB units
+File path (or DONE): Strategy: 1 First Fit  2 Best Fit  3 Worst Fit  4 Smart: [event] tick=0 pid=1 ARRIVED
+[event] tick=0 pid=1 ALLOCATED successfully
+[event] tick=0 pid=2 ARRIVED
+[event] tick=0 pid=2 ALLOCATED successfully
+[event] tick=0 pid=3 ARRIVED
+[event] tick=0 pid=3 ALLOCATED successfully
+
+--- LIVE MEMORY SNAPSHOT AT TICK 0 ---
+
+MEMORY MAP (pool 2048 KB)
+[0     , 100   ) sample_a.txt           USED  100 KB
+[100   , 400   ) sample_b.txt           USED  300 KB
+[400   , 900   ) sample_c.txt           USED  500 KB
+[900   , 2048  ) (free)                 FREE  1148 KB
+Used 900 KB | Free 1148 KB | fragments 1 | largest 1148 KB | external fragmentation 0.00%
+
+--- LIVE MEMORY SNAPSHOT AT TICK 1 ---
+
+MEMORY MAP (pool 2048 KB)
+[0     , 100   ) sample_a.txt           USED  100 KB
+[100   , 400   ) sample_b.txt           USED  300 KB
+[400   , 900   ) sample_c.txt           USED  500 KB
+[900   , 2048  ) (free)                 FREE  1148 KB
+Used 900 KB | Free 1148 KB | fragments 1 | largest 1148 KB | external fragmentation 0.00%
+
+--- LIVE MEMORY SNAPSHOT AT TICK 2 ---
+
+MEMORY MAP (pool 2048 KB)
+[0     , 100   ) sample_a.txt           USED  100 KB
+[100   , 400   ) sample_b.txt           USED  300 KB
+[400   , 900   ) sample_c.txt           USED  500 KB
+[900   , 2048  ) (free)                 FREE  1148 KB
+Used 900 KB | Free 1148 KB | fragments 1 | largest 1148 KB | external fragmentation 0.00%
+[event] tick=3 pid=1 COMPLETED: block released; no adjacent free block to merge
+
+--- LIVE MEMORY SNAPSHOT AT TICK 3 ---
+
+MEMORY MAP (pool 2048 KB)
+[0     , 100   ) (free)                 FREE  100 KB
+[100   , 400   ) sample_b.txt           USED  300 KB
+[400   , 900   ) sample_c.txt           USED  500 KB
+[900   , 2048  ) (free)                 FREE  1148 KB
+Used 800 KB | Free 1248 KB | fragments 2 | largest 1148 KB | external fragmentation 8.01%
+
+--- LIVE MEMORY SNAPSHOT AT TICK 4 ---
+
+MEMORY MAP (pool 2048 KB)
+[0     , 100   ) (free)                 FREE  100 KB
+[100   , 400   ) sample_b.txt           USED  300 KB
+[400   , 900   ) sample_c.txt           USED  500 KB
+[900   , 2048  ) (free)                 FREE  1148 KB
+Used 800 KB | Free 1248 KB | fragments 2 | largest 1148 KB | external fragmentation 8.01%
+[event] tick=5 pid=2 COMPLETED: block released; no adjacent free block to merge
+
+--- LIVE MEMORY SNAPSHOT AT TICK 5 ---
+
+MEMORY MAP (pool 2048 KB)
+[0     , 400   ) (free)                 FREE  400 KB
+[400   , 900   ) sample_c.txt           USED  500 KB
+[900   , 2048  ) (free)                 FREE  1148 KB
+Used 500 KB | Free 1548 KB | fragments 2 | largest 1148 KB | external fragmentation 25.84%
+
+--- LIVE MEMORY SNAPSHOT AT TICK 6 ---
+
+MEMORY MAP (pool 2048 KB)
+[0     , 400   ) (free)                 FREE  400 KB
+[400   , 900   ) sample_c.txt           USED  500 KB
+[900   , 2048  ) (free)                 FREE  1148 KB
+Used 500 KB | Free 1548 KB | fragments 2 | largest 1148 KB | external fragmentation 25.84%
+[event] tick=7 pid=3 COMPLETED: block released; adjacent free blocks coalesced
+
+--- LIVE MEMORY SNAPSHOT AT TICK 7 ---
+
+MEMORY MAP (pool 2048 KB)
+[0     , 2048  ) (free)                 FREE  2048 KB
+Used 0 KB | Free 2048 KB | fragments 1 | largest 2048 KB | external fragmentation 0.00%
+
+MEMORY MAP (pool 2048 KB)
+[0     , 2048  ) (free)                 FREE  2048 KB
+Used 0 KB | Free 2048 KB | fragments 1 | largest 2048 KB | external fragmentation 0.00%
+
+PROCESS TABLE
+ID   Name                     Units KB   Duration State       Address          Wait    
+1    sample_a.txt             100        3        COMPLETED   [0,100)          0       
+2    sample_b.txt             300        5        COMPLETED   [100,400)        0       
+3    sample_c.txt             500        7        COMPLETED   [400,900)        0       
+
+METRICS
+Processes: 3 | accepted: 3 | first-attempt success: 3 (100.00%)
+Fragmentation failures: 0 | out-of-memory failures: 0
+Waiting processes: 0 | average wait: 0.00 ticks | makespan: 7 ticks
+Average external fragmentation: 8.46% | average search length: 2.00 blocks
+Final memory: used 0 KB | free 2048 KB | largest free block 2048 KB | fragments 1
+Compactions: 0 | units moved: 0
+Event log written to events.log
+
+Current pool: 2048 KB
+1. Add real files and simulate
+2. Generate file-profile workload
+3. Generate program-profile workload
+4. Compare all strategies + recommendation
+5. Run full experiments (30 seeds + timing)
+6. Optional data-storage demo
+7. Change memory pool
+0. Exit
+Choice: Goodbye.

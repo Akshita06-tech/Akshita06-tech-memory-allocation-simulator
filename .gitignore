@@ -1,7 +1,7 @@
-memsim
-tests
 *.exe
-policy.c
-policy.h
-metrics.c
-metrics.h
+simulator
+tests
+*.o
+events.log
+events_*.log
+.vscode/*.log

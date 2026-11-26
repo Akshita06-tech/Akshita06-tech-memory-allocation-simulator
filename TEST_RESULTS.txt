@@ -1,0 +1,55 @@
+gcc -std=c11 -Wall -Wextra -Wpedantic -O2 tests.c process.c memory.c policy.c metrics.c -o tests
+./tests
+[PASS] N1 measured file size rounds 1,234,567 bytes to 1206 KB
+[PASS] N2 empty/missing files and directories are rejected
+[PASS] memory pool created
+[PASS] allocate three blocks
+[PASS] N9 allocated blocks do not overlap and N16 used plus free equals pool
+[PASS] N6 freeing middle/left/right merges both neighbours
+[PASS] free blocks fully coalesce
+[PASS] N11 consistency checker returns 0 for valid owner and block invariants
+[PASS] N11 checker rejects a free block with an owner
+[PASS] double free is rejected safely
+[PASS] duplicate owner allocation is rejected
+[PASS] N11 checker rejects an allocated block without an owner
+[PASS] N3 request larger than pool is true out-of-memory
+[PASS] First/Best/Worst Fit selects correct candidate block
+[PASS] First/Best/Worst Fit selects correct candidate block
+[PASS] First/Best/Worst Fit selects correct candidate block
+[PASS] N12 failed allocation leaves memory map unchanged
+[PASS] N13 fragmentation and out-of-memory are distinguished
+[PASS] N15 compaction preserves free total and leaves one free block
+[PASS] N16 used plus free equals total after compaction
+[PASS] N4 identical seed creates identical file-profile workload
+[PASS] different seed changes workload
+[PASS] N5 every file profile size is within its declared range
+[PASS] N20 program-profile workload repeats with same seed
+[PASS] N20 every program-profile size is within its declared range
+[PASS] storage mode rounds 66 bytes to 3 units
+[PASS] N17 stored bytes remain identical after compaction
+[PASS] N16 memory accounting holds in storage mode
+[PASS] N18 zero free memory reports 0% fragmentation without division by zero
+[PASS] N7 waiter retries after release and waiting duration counts all four ticks
+[PASS] N9 completed processes retain their original half-open address ranges
+[PASS] waiting metrics use elapsed ticks, not failed retry count
+[PASS] N13 first failed attempt is classified and counted only once across repeated retries
+[PASS] N9 no two simultaneously running processes overlap in address and time
+[PASS] N8 no deadlock: waiting process runs when all memory is free
+[PASS] N3 oversized request is counted as out-of-memory
+[PASS] N10 running process addresses refresh after compaction
+[PASS] Smart compaction reproduces guide example: 200 KB moved and new.pdf placed at [1400,1900)
+[PASS] worked-example compaction preserves all memory invariants
+[PASS] N14 recommendation explicitly reports tied rank sums
+[event] tick=0 pid=1 ARRIVED
+[event] tick=0 pid=1 ALLOCATED successfully
+[event] tick=0 pid=2 ARRIVED
+[event] tick=0 pid=2 WAITING: insufficient total free memory (free=70 KB, largest=70 KB)
+[event] tick=1 pid=1 COMPLETED: block released; no adjacent free block to merge
+[event] tick=1 pid=2 ALLOCATED successfully
+[event] tick=2 pid=2 COMPLETED: block released; no adjacent free block to merge
+[PASS] N19 event log contains ordered arrival/allocation/failure/completion events
+[PASS] event log is truncated once at the beginning of a new run
+pattern sample: light small=365, heavy large=407
+[PASS] Light/heavy workload patterns bias toward txt/docx and pdf/pptx respectively
+
+Tests passed: 43 | failed: 0

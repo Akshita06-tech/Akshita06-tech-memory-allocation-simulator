@@ -1,0 +1,76 @@
+======================================================
+ INTELLIGENT MEMORY ALLOCATION & FRAGMENTATION SIMULATOR
+ C11 | First Fit | Best Fit | Worst Fit | Smart
+======================================================
+
+Current pool: 2048 KB
+1. Add real files and simulate
+2. Generate file-profile workload
+3. Generate program-profile workload
+4. Compare all strategies + recommendation
+5. Run full experiments (30 seeds + timing)
+6. Optional data-storage demo
+7. Change memory pool
+0. Exit
+Choice: 
+EXPERIMENTS: 30 seeds; file and program profiles; raw results -> experiment_results.csv
+File/light pool=1024 KB n=10 | frag FF 12.21 BF 11.81 WF 12.65 Smart 11.39 | rank sums 9,10,10,5 | recommend Smart
+  Smart has the lowest rank sum (5). Metrics: success rate, waiting time, makespan, fragmentation and search length.
+File/light pool=4096 KB n=50 | frag FF 26.55 BF 25.62 WF 26.07 Smart 11.98 | rank sums 13,8,15,8 | recommend Best Fit
+  Tie: 2 strategies share the lowest rank sum (8); no clear winner.
+File/light pool=16384 KB n=100 | frag FF 48.79 BF 47.84 WF 52.72 Smart 19.38 | rank sums 11,11,13,8 | recommend Smart
+  Smart has the lowest rank sum (8). Metrics: success rate, waiting time, makespan, fragmentation and search length.
+File/balanced pool=1024 KB n=10 | frag FF 9.41 BF 9.41 WF 9.42 Smart 8.16 | rank sums 8,8,10,5 | recommend Smart
+  Smart has the lowest rank sum (5). Metrics: success rate, waiting time, makespan, fragmentation and search length.
+File/balanced pool=4096 KB n=50 | frag FF 25.25 BF 25.76 WF 25.38 Smart 9.30 | rank sums 12,11,12,8 | recommend Smart
+  Smart has the lowest rank sum (8). Metrics: success rate, waiting time, makespan, fragmentation and search length.
+File/balanced pool=16384 KB n=100 | frag FF 53.66 BF 52.65 WF 55.20 Smart 16.32 | rank sums 10,11,14,8 | recommend Smart
+  Smart has the lowest rank sum (8). Metrics: success rate, waiting time, makespan, fragmentation and search length.
+File/heavy pool=1024 KB n=10 | frag FF 3.02 BF 3.02 WF 3.02 Smart 2.52 | rank sums 8,8,8,5 | recommend Smart
+  Smart has the lowest rank sum (5). Metrics: success rate, waiting time, makespan, fragmentation and search length.
+File/heavy pool=4096 KB n=50 | frag FF 14.09 BF 14.06 WF 14.60 Smart 7.48 | rank sums 11,9,13,5 | recommend Smart
+  Smart has the lowest rank sum (5). Metrics: success rate, waiting time, makespan, fragmentation and search length.
+File/heavy pool=16384 KB n=100 | frag FF 49.61 BF 50.44 WF 51.22 Smart 12.81 | rank sums 9,10,11,11 | recommend First Fit
+  First Fit has the lowest rank sum (9). Metrics: success rate, waiting time, makespan, fragmentation and search length.
+Program/light pool=1024 KB n=10 | frag FF 19.76 BF 19.95 WF 19.73 Smart 11.48 | rank sums 11,11,8,5 | recommend Smart
+  Smart has the lowest rank sum (5). Metrics: success rate, waiting time, makespan, fragmentation and search length.
+Program/light pool=4096 KB n=50 | frag FF 47.03 BF 47.22 WF 47.20 Smart 20.49 | rank sums 10,14,11,8 | recommend Smart
+  Smart has the lowest rank sum (8). Metrics: success rate, waiting time, makespan, fragmentation and search length.
+Program/light pool=16384 KB n=100 | frag FF 36.75 BF 35.55 WF 49.35 Smart 35.70 | rank sums 11,5,14,6 | recommend Best Fit
+  Best Fit has the lowest rank sum (5). Metrics: success rate, waiting time, makespan, fragmentation and search length.
+Program/balanced pool=1024 KB n=10 | frag FF 18.67 BF 18.86 WF 18.16 Smart 13.48 | rank sums 9,11,10,5 | recommend Smart
+  Smart has the lowest rank sum (5). Metrics: success rate, waiting time, makespan, fragmentation and search length.
+Program/balanced pool=4096 KB n=50 | frag FF 47.60 BF 47.22 WF 49.01 Smart 18.62 | rank sums 10,8,14,8 | recommend Best Fit
+  Tie: 2 strategies share the lowest rank sum (8); no clear winner.
+Program/balanced pool=16384 KB n=100 | frag FF 41.35 BF 40.69 WF 51.03 Smart 37.21 | rank sums 11,8,17,5 | recommend Smart
+  Smart has the lowest rank sum (5). Metrics: success rate, waiting time, makespan, fragmentation and search length.
+Program/heavy pool=1024 KB n=10 | frag FF 14.08 BF 14.48 WF 14.08 Smart 9.30 | rank sums 8,10,8,5 | recommend Smart
+  Smart has the lowest rank sum (5). Metrics: success rate, waiting time, makespan, fragmentation and search length.
+Program/heavy pool=4096 KB n=50 | frag FF 47.89 BF 47.33 WF 48.27 Smart 15.86 | rank sums 11,10,12,8 | recommend Smart
+  Smart has the lowest rank sum (8). Metrics: success rate, waiting time, makespan, fragmentation and search length.
+Program/heavy pool=16384 KB n=100 | frag FF 58.97 BF 57.31 WF 59.73 Smart 29.82 | rank sums 11,8,14,8 | recommend Best Fit
+  Tie: 2 strategies share the lowest rank sum (8); no clear winner.
+Timing n=1000 First Fit  average 0.0093 s (3 runs)
+Timing n=1000 Best Fit   average 0.0099 s (3 runs)
+Timing n=1000 Worst Fit  average 0.0087 s (3 runs)
+Timing n=1000 Smart      average 0.0144 s (3 runs)
+Timing n=5000 First Fit  average 0.2155 s (3 runs)
+Timing n=5000 Best Fit   average 0.2180 s (3 runs)
+Timing n=5000 Worst Fit  average 0.2173 s (3 runs)
+Timing n=5000 Smart      average 0.3889 s (3 runs)
+Timing n=10000 First Fit  average 0.9471 s (3 runs)
+Timing n=10000 Best Fit   average 0.9319 s (3 runs)
+Timing n=10000 Worst Fit  average 0.9227 s (3 runs)
+Timing n=10000 Smart      average 1.4966 s (3 runs)
+Saved experiment_results.csv and timing_results.csv. Both include raw results for report tables and charts.
+
+Current pool: 2048 KB
+1. Add real files and simulate
+2. Generate file-profile workload
+3. Generate program-profile workload
+4. Compare all strategies + recommendation
+5. Run full experiments (30 seeds + timing)
+6. Optional data-storage demo
+7. Change memory pool
+0. Exit
+Choice: Goodbye.

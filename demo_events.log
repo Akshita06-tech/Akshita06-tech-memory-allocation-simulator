@@ -1,0 +1,9 @@
+tick=0 pid=1 ARRIVED
+tick=0 pid=1 ALLOCATED successfully
+tick=0 pid=2 ARRIVED
+tick=0 pid=2 ALLOCATED successfully
+tick=0 pid=3 ARRIVED
+tick=0 pid=3 ALLOCATED successfully
+tick=3 pid=1 COMPLETED: block released; no adjacent free block to merge
+tick=5 pid=2 COMPLETED: block released; no adjacent free block to merge
+tick=7 pid=3 COMPLETED: block released; adjacent free blocks coalesced

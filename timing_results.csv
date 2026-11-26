@@ -1,0 +1,13 @@
+processes,seed,strategy,repetitions,average_elapsed_seconds
+1000,2026,First Fit,3,0.009308
+1000,2026,Best Fit,3,0.009913
+1000,2026,Worst Fit,3,0.008662
+1000,2026,Smart,3,0.014376
+5000,2026,First Fit,3,0.215544
+5000,2026,Best Fit,3,0.217999
+5000,2026,Worst Fit,3,0.217298
+5000,2026,Smart,3,0.388930
+10000,2026,First Fit,3,0.947076
+10000,2026,Best Fit,3,0.931871
+10000,2026,Worst Fit,3,0.922738
+10000,2026,Smart,3,1.496602

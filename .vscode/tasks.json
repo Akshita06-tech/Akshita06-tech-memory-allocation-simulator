@@ -1,0 +1,20 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build Simulator",
+      "type": "shell",
+      "command": "gcc",
+      "args": ["-std=c11", "-Wall", "-Wextra", "-O2", "main.c", "process.c", "memory.c", "policy.c", "metrics.c", "-o", "simulator.exe"],
+      "group": {"kind": "build", "isDefault": true},
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "Build Tests",
+      "type": "shell",
+      "command": "gcc",
+      "args": ["-std=c11", "-Wall", "-Wextra", "-O2", "tests.c", "process.c", "memory.c", "policy.c", "metrics.c", "-o", "tests.exe"],
+      "problemMatcher": ["$gcc"]
+    }
+  ]
+}

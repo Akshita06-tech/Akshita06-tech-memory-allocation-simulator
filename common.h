@@ -6,8 +6,9 @@
 #include <string.h>
 #include <time.h>
 #include <limits.h>
+#include <stdint.h>
 
-#define MAX_PROCS 512
+#define MAX_PROCS 10000
 #define NAME_LEN 64
 #define TYPE_LEN 16
 #define OWNER_LEN 64
@@ -33,6 +34,7 @@ typedef struct {
     int first_try_failure; /* 0 none, 1 fragmentation, 2 out-of-memory */
     int wait_ticks;
     int queued;
+    int wait_start_tick; /* first tick at which this process entered WAITING */
 } Proc;
 
 typedef struct Profile {
@@ -67,6 +69,8 @@ typedef struct {
     long units_moved;
     double avg_wait, success_rate, avg_search_length;
     double avg_fragmentation;
+    int rank_sum;
+    int final_free_memory, final_used_memory, final_largest_free, final_free_fragments;
 } Metrics;
 
 typedef struct {

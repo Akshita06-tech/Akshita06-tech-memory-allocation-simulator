@@ -1,5 +1,6 @@
 #include "process.h"
 #include "metrics.h"
+#include <sys/stat.h>
 
 static const Profile file_profiles[] = {
     {"txt","Text file",1,30,2,5,3}, {"docx","Word document",50,400,4,10,3},
@@ -22,15 +23,21 @@ const char *strategy_name(Strategy s) {
 }
 
 long measure_file_size(const char *path) {
-    FILE *f=fopen(path,"rb");
-    if (!f) return -1;
-    if (fseek(f,0,SEEK_END)!=0) { fclose(f); return -1; }
-    long size=ftell(f); fclose(f);
-    return size;
+    struct stat st;
+    if(!path || !*path || stat(path,&st)!=0) return -1;
+#if defined(_WIN32)
+    if((st.st_mode & _S_IFDIR)!=0) return -1;
+#else
+    if(S_ISDIR(st.st_mode) || !S_ISREG(st.st_mode)) return -1;
+#endif
+    if(st.st_size<0 || (uintmax_t)st.st_size>(uintmax_t)LONG_MAX) return -1;
+    return (long)st.st_size;
 }
+
 int bytes_to_units(long bytes, int unit) {
-    if (bytes<=0 || unit<=0 || bytes>LONG_MAX-unit+1) return -1;
-    return (int)((bytes+unit-1)/unit);
+    if(bytes<=0 || unit<=0) return -1;
+    long units=1+(bytes-1)/unit; /* avoids overflow in bytes + unit - 1 */
+    return units>INT_MAX ? INT_MAX : (int)units;
 }
 
 static unsigned rng_next(unsigned *s) {
@@ -44,16 +51,16 @@ int generate_processes(Proc *out, int n, unsigned seed, int pattern, ProfileMode
     int total_weight=0;
     for (int i=0;i<5;i++) {
         int w=profiles[i].weight;
-        if (pattern==LIGHT_PATTERN && i>=2) w=1;
-        if (pattern==HEAVY_PATTERN && i<2) w=1;
+        if (pattern==LIGHT_PATTERN) w=(i<2?5:1);
+        if (pattern==HEAVY_PATTERN) w=(i>=3?5:1);
         total_weight+=w;
     }
     for (int i=0;i<n;i++) {
         int pick=(int)(rng_next(&state)%(unsigned)total_weight), idx=0;
         for (;idx<4;idx++) {
             int w=profiles[idx].weight;
-            if (pattern==LIGHT_PATTERN && idx>=2) w=1;
-            if (pattern==HEAVY_PATTERN && idx<2) w=1;
+            if (pattern==LIGHT_PATTERN) w=(idx<2?5:1);
+            if (pattern==HEAVY_PATTERN) w=(idx>=3?5:1);
             if (pick<w) break;
             pick-=w;
         }
@@ -64,7 +71,7 @@ int generate_processes(Proc *out, int n, unsigned seed, int pattern, ProfileMode
         out[i].id=i+1; snprintf(out[i].name,sizeof(out[i].name),"%s_%03d",pr->type,i+1);
         snprintf(out[i].type,sizeof(out[i].type),"%s",pr->type);
         out[i].size_bytes=(long)size*KB; out[i].units=size; out[i].duration=dur;
-        out[i].arrive_tick=i/3; out[i].start_tick=-1; out[i].finish_tick=-1; out[i].state=P_NEW;
+        out[i].arrive_tick=i/10; out[i].start_tick=-1; out[i].finish_tick=-1; out[i].wait_start_tick=-1; out[i].state=P_NEW;
     }
     return n;
 }
@@ -91,7 +98,7 @@ static void attempt(Proc *p, int n, int i, Memory *m, Strategy strategy,
     Proc *x=&p[i];
     if(x->units>m->total_units) {
         x->state=P_REJECTED;
-        if(!x->first_try_failure) x->first_try_failure=2;
+        if(!x->first_try_failure) { x->first_try_failure=2; met->oom_failures++; }
         log_event(tick,x->id,"REJECTED: request exceeds entire pool");
         return;
     }
@@ -113,6 +120,7 @@ static void attempt(Proc *p, int n, int i, Memory *m, Strategy strategy,
         if(b) {
             x->start_addr=b->start; x->end_addr=b->start+b->size;
             x->start_tick=tick; x->finish_tick=tick+x->duration; x->state=P_RUNNING;
+            if(x->wait_start_tick>=0) x->wait_ticks=tick-x->wait_start_tick;
             if(!x->first_try_failure) met->first_try_success++;
             log_event(tick,x->id,"ALLOCATED successfully");
             return;
@@ -124,11 +132,15 @@ static void attempt(Proc *p, int n, int i, Memory *m, Strategy strategy,
         else met->oom_failures++;
     }
     x->state=P_WAITING;
+    if(x->wait_start_tick<0) x->wait_start_tick=tick;
     if(!x->queued && queue_push(q,i)) x->queued=1;
-    log_event(tick,x->id,x->first_try_failure==1?"WAITING: fragmentation failure":"WAITING: insufficient total free memory");
+    { char reason[160]; Stats now=mem_stats(m);
+      snprintf(reason,sizeof(reason),"WAITING: %s (free=%d KB, largest=%d KB)",
+               x->first_try_failure==1?"fragmentation failure":"insufficient total free memory",now.total_free,now.largest_free);
+      log_event(tick,x->id,reason); }
 }
 
-void sim_run(Proc *p,int n,Memory *m,Strategy strategy,Metrics *out) {
+static void sim_run_internal(Proc *p,int n,Memory *m,Strategy strategy,Metrics *out,int show_map) {
     if(!p||!m||!out||n<0) return;
     memset(out,0,sizeof(*out)); out->process_count=n;
     ProcQueue q; queue_init(&q);
@@ -136,22 +148,28 @@ void sim_run(Proc *p,int n,Memory *m,Strategy strategy,Metrics *out) {
     double frag_sum=0; int frag_samples=0;
     while(remaining>0 && tick<max_ticks) {
         for(int i=0;i<n;i++) if(p[i].state==P_RUNNING && p[i].finish_tick==tick) {
-            mem_free(m,p[i].name); p[i].state=P_COMPLETED; p[i].end_addr=p[i].start_addr;
-            remaining--; log_event(tick,p[i].id,"COMPLETED: block released and adjacent free blocks merged");
+            Stats before_free=mem_stats(m);
+            mem_free(m,p[i].name); p[i].state=P_COMPLETED;
+            Stats after_free=mem_stats(m);
+            remaining--;
+            log_event(tick,p[i].id,after_free.free_fragments<before_free.free_fragments ?
+                      "COMPLETED: block released; adjacent free blocks coalesced" :
+                      "COMPLETED: block released; no adjacent free block to merge");
         }
         /* Retry in FIFO arrival order; retain those that still do not fit. */
         int qcount=queue_size(&q);
         for(int k=0;k<qcount;k++) {
             int idx = -1; if (!queue_pop(&q,&idx)) continue; if (idx < 0 || idx >= n) continue; p[idx].queued=0;
             if(p[idx].state==P_WAITING) attempt(p,n,idx,m,strategy,tick,&q,out);
-            if(p[idx].state==P_WAITING) p[idx].wait_ticks++;
         }
         for(int i=0;i<n;i++) if(p[i].state==P_NEW && p[i].arrive_tick<=tick) {
             p[i].state=P_READY; log_event(tick,p[i].id,"ARRIVED");
             attempt(p,n,i,m,strategy,tick,&q,out);
         }
         Stats st=mem_stats(m); frag_sum+=st.external_fragmentation; frag_samples++;
-        if(!mem_check_invariants(m)) { fprintf(stderr,"FATAL: memory invariant failed at tick %d\n",tick); break; }
+        log_snapshot(tick,&st);
+        if(mem_check_invariants(m)!=0) { fprintf(stderr,"FATAL: memory invariant failed at tick %d\n",tick); break; }
+        if(show_map) { printf("\n--- LIVE MEMORY SNAPSHOT AT TICK %d ---\n",tick); mem_print_map(m); }
         tick++;
         int active=0;
         for(int i=0;i<n;i++) if(p[i].state==P_RUNNING || p[i].state==P_WAITING || p[i].state==P_NEW) active++;
@@ -177,6 +195,16 @@ void sim_run(Proc *p,int n,Memory *m,Strategy strategy,Metrics *out) {
     out->success_rate=out->accepted?(double)out->first_try_success/out->accepted*100.0:0;
     out->avg_search_length=out->allocation_attempts?(double)out->total_searches/out->allocation_attempts:0;
     out->avg_fragmentation=frag_samples?frag_sum/frag_samples:0;
+    Stats final_stats=mem_stats(m);
+    out->final_free_memory=final_stats.total_free; out->final_used_memory=final_stats.used_memory;
+    out->final_largest_free=final_stats.largest_free; out->final_free_fragments=final_stats.free_fragments;
+}
+
+void sim_run(Proc *p,int n,Memory *m,Strategy strategy,Metrics *out) {
+    sim_run_internal(p,n,m,strategy,out,0);
+}
+void sim_run_display(Proc *p,int n,Memory *m,Strategy strategy,Metrics *out) {
+    sim_run_internal(p,n,m,strategy,out,1);
 }
 
 int add_real_file_process(Proc *p,int *count,const char *path,int duration,int pool_units) {
@@ -194,7 +222,7 @@ int add_real_file_process(Proc *p,int *count,const char *path,int duration,int p
     }
     const char *dot=strrchr(x->name,'.'); snprintf(x->type,sizeof(x->type),"%s",dot?dot+1:"file");
     x->from_real_file=1; x->size_bytes=bytes; x->units=units; x->duration=duration;
-    x->arrive_tick=*count/3; x->start_tick=-1; x->finish_tick=-1; x->state=P_NEW;
+    x->arrive_tick=*count/3; x->start_tick=-1; x->finish_tick=-1; x->wait_start_tick=-1; x->state=P_NEW;
     (*count)++;
     printf("Added %s: %ld bytes -> %d KB units%s\n",x->name,bytes,units,units>pool_units?" (will be rejected: larger than pool)":"");
     return 1;
