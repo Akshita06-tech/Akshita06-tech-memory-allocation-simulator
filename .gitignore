@@ -5,3 +5,6 @@ tests
 events.log
 events_*.log
 .vscode/*.log
+ui/bridge.exe
+ui/bridge
+ui/.tmp_uploads/
